@@ -177,9 +177,16 @@ endif()
 
 # ===================================================================
 # clang-tidy
+#
+# PROJECT_IS_TOP_LEVEL guarded like BUILD_TESTING/ENABLE_SANITIZERS/the demo
+# below: a project pulling this in via add_subdirectory()/CPMAddPackage()
+# almost always defines its own `tidy` target for its whole tree, and
+# add_custom_target() aborts the configure step on a name collision (CMake
+# has no way to merge or namespace custom targets the way it does real
+# build targets).
 # ===================================================================
 find_program(RUN_CLANG_TIDY_EXECUTABLE NAMES run-clang-tidy run-clang-tidy.py)
-if(RUN_CLANG_TIDY_EXECUTABLE)
+if(RUN_CLANG_TIDY_EXECUTABLE AND PROJECT_IS_TOP_LEVEL)
     add_custom_target(tidy
         COMMAND ${RUN_CLANG_TIDY_EXECUTABLE}
             -p ${CMAKE_CURRENT_BINARY_DIR}
