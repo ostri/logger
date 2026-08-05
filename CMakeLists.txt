@@ -236,8 +236,14 @@ endif()
 
 # ===================================================================
 # tests
+#
+# PROJECT_IS_TOP_LEVEL guarded like tidy/coverage/the demo above:
+# BUILD_TESTING is a cache variable, so a consumer that turns it ON for its
+# own test tree (dbgen4, for one) would otherwise still reach this block and
+# register logger_test with ctest - which then reports it as
+# logger_test_NOT_BUILT because nothing here builds it as a subdirectory.
 # ===================================================================
-if(BUILD_TESTING)
+if(BUILD_TESTING AND PROJECT_IS_TOP_LEVEL)
     add_executable(logger_test test/test_logger.cpp)
     target_link_libraries(logger_test PRIVATE logger::logger Catch2::Catch2WithMain logger_warnings)
     target_include_directories(logger_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
