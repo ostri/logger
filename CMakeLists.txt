@@ -289,8 +289,13 @@ if(BUILD_TESTING)
     # then renders an HTML report with gcovr. demo/ and test/ are excluded
     # from the report - coverage is a question about the library
     # (src/, include/), not about the demo program or the test code itself.
+    #
+    # PROJECT_IS_TOP_LEVEL guarded like the tidy target above: BUILD_TESTING
+    # is a cache variable, so a consumer that turns it ON for its own test
+    # tree (dbgen4, for one) would otherwise still hit this block and collide
+    # with its own `coverage` target.
     # ===================================================================
-    if(ENABLE_COVERAGE)
+    if(ENABLE_COVERAGE AND PROJECT_IS_TOP_LEVEL)
         find_program(GCOVR_EXECUTABLE gcovr REQUIRED)
         set(COVERAGE_OUTPUT_DIR ${CMAKE_CURRENT_BINARY_DIR}/coverage)
         add_custom_target(coverage
