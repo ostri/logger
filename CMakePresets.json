@@ -21,6 +21,15 @@
       }
     },
     {
+      "name": "ninja-profile",
+      "displayName": "Profile",
+      "generator": "Ninja",
+      "binaryDir": "${sourceDir}/build/profile",
+      "cacheVariables": {
+        "CMAKE_BUILD_TYPE": "Profile"
+      }
+    },
+    {
       "name": "ninja-coverage",
       "displayName": "Coverage (gcov/gcovr, GCC only)",
       "generator": "Ninja",
@@ -35,6 +44,7 @@
   "buildPresets": [
     { "name": "debug", "configurePreset": "ninja-debug" },
     { "name": "release", "configurePreset": "ninja-release" },
+    { "name": "profile", "configurePreset": "ninja-profile" },
     { "name": "coverage", "configurePreset": "ninja-coverage" }
   ]
 }
