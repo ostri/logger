@@ -60,6 +60,19 @@ endif()
 # gcovr. Requires BUILD_TESTING (there is nothing to run coverage on
 # otherwise) and GCC (gcov is GCC's own tool; Clang's equivalent uses a
 # different flag/toolchain and isn't wired up here).
+#
+# Deliberately *not* add_compile_options()/add_link_options() (directory
+# scoped): that would also instrument logger_demo, which the `coverage`
+# target never runs. logger.hpp's template member functions (trace/debug/../
+# error<E>/critical<E>) get instantiated anew in every translation unit that
+# calls them, demo.cpp included - an instrumented-but-never-executed
+# instantiation in logger_demo would show up as "not covered" in gcovr's
+# per-source-file report and drag down include/logger/logger.hpp's numbers,
+# even though logger_test's own instantiations of those exact same lines are
+# fully exercised. LOGGER_COVERAGE_FLAGS is applied per-target below (logger,
+# logger_test, signal_terminate_helper) instead, so logger_demo stays
+# uninstrumented and out of the report entirely - matching this option's own
+# description ("Instrument logger/logger_test with gcov").
 # ===================================================================
 if(ENABLE_COVERAGE)
     if(NOT BUILD_TESTING)
@@ -68,8 +81,8 @@ if(ENABLE_COVERAGE)
     if(NOT CMAKE_CXX_COMPILER_ID STREQUAL "GNU")
         message(FATAL_ERROR "ENABLE_COVERAGE needs GCC's gcov - reconfigure with CXX=g++")
     endif()
-    add_compile_options(--coverage -O0 -g)
-    add_link_options(--coverage)
+    set(LOGGER_COVERAGE_COMPILE_FLAGS --coverage -O0 -g)
+    set(LOGGER_COVERAGE_LINK_FLAGS --coverage)
 endif()
 
 # ===================================================================
@@ -157,6 +170,10 @@ target_compile_definitions(logger
         SPDLOG_FMT_EXTERNAL
         SPDLOG_COMPILED_LIB
 )
+if(ENABLE_COVERAGE)
+    target_compile_options(logger PRIVATE ${LOGGER_COVERAGE_COMPILE_FLAGS})
+    target_link_options(logger PRIVATE ${LOGGER_COVERAGE_LINK_FLAGS})
+endif()
 
 # ===================================================================
 # clang-tidy
@@ -199,6 +216,15 @@ if(PROJECT_IS_TOP_LEVEL)
         target_compile_options(logger_demo PRIVATE -fsanitize=address,undefined,leak -fno-omit-frame-pointer -g3 -O1)
         target_link_options(logger_demo PRIVATE -fsanitize=address,undefined,leak)
     endif()
+    if(ENABLE_COVERAGE)
+        # liblogger.a is itself instrumented (see LOGGER_COVERAGE_COMPILE_FLAGS
+        # above), which makes its object files reference __gcov_init/__gcov_exit
+        # - any executable linking it needs -lgcov to resolve those, even one
+        # that (deliberately, see the comment above) is not itself compiled
+        # with --coverage and so instantiates no instrumented template code of
+        # its own.
+        target_link_options(logger_demo PRIVATE ${LOGGER_COVERAGE_LINK_FLAGS})
+    endif()
 endif()
 
 # ===================================================================
@@ -208,16 +234,47 @@ if(BUILD_TESTING)
     add_executable(logger_test test/test_logger.cpp)
     target_link_libraries(logger_test PRIVATE logger::logger Catch2::Catch2WithMain logger_warnings)
     target_include_directories(logger_test PRIVATE ${CMAKE_CURRENT_SOURCE_DIR}/include)
+    # Absolute path to signal_terminate_helper (built below), so tests that
+    # fork/exec it don't depend on the current working directory.
+    target_compile_definitions(logger_test PRIVATE "SIGNAL_TERMINATE_HELPER_PATH=\"$<TARGET_FILE:signal_terminate_helper>\"")
 
     if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND ENABLE_SANITIZERS)
         target_compile_options(logger_test PRIVATE -fsanitize=address,undefined,leak -fno-omit-frame-pointer -g3 -O1)
         target_link_options(logger_test PRIVATE -fsanitize=address,undefined,leak)
+    endif()
+    if(ENABLE_COVERAGE)
+        target_compile_options(logger_test PRIVATE ${LOGGER_COVERAGE_COMPILE_FLAGS})
+        target_link_options(logger_test PRIVATE ${LOGGER_COVERAGE_LINK_FLAGS})
     endif()
 
     catch_discover_tests(logger_test
         WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
         PROPERTIES LABELS "unit"
     )
+
+    # ===================================================================
+    # signal_terminate_helper - a plain, Catch2-free executable that
+    # test_logger.cpp forks/execs to exercise setup_signal_handler()/
+    # setup_terminate_handler(), which end in std::exit()/std::abort() and so
+    # cannot run inside the Catch2 test binary itself. See the file's own
+    # header comment for why. Given the same coverage instrumentation as
+    # logger_test below so the library code paths it exercises still count
+    # towards the coverage report.
+    # ===================================================================
+    add_executable(signal_terminate_helper test/helper/signal_terminate_helper.cpp)
+    target_link_libraries(signal_terminate_helper PRIVATE logger::logger logger_warnings)
+
+    if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND ENABLE_SANITIZERS)
+        target_compile_options(signal_terminate_helper PRIVATE -fsanitize=address,undefined,leak -fno-omit-frame-pointer -g3 -O1)
+        target_link_options(signal_terminate_helper PRIVATE -fsanitize=address,undefined,leak)
+    endif()
+    if(ENABLE_COVERAGE)
+        target_compile_options(signal_terminate_helper PRIVATE ${LOGGER_COVERAGE_COMPILE_FLAGS})
+        target_link_options(signal_terminate_helper PRIVATE ${LOGGER_COVERAGE_LINK_FLAGS})
+        # __gcov_dump() (see the file's own comment) is only declared/linkable
+        # when this binary is itself built with --coverage.
+        target_compile_definitions(signal_terminate_helper PRIVATE LOGGER_TEST_COVERAGE_BUILD)
+    endif()
 
     # ===================================================================
     # coverage - runs logger_test (discarding its own pass/fail: the point
@@ -244,7 +301,7 @@ if(BUILD_TESTING)
                 --print-summary
                 ${CMAKE_CURRENT_BINARY_DIR}
             WORKING_DIRECTORY ${CMAKE_CURRENT_BINARY_DIR}
-            DEPENDS logger_test
+            DEPENDS logger_test signal_terminate_helper
             COMMENT "Running logger_test and rendering an HTML coverage report to ${COVERAGE_OUTPUT_DIR}/index.html"
             VERBATIM
         )

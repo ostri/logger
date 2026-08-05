@@ -4,6 +4,7 @@
 #include <spdlog/spdlog.h>
 #include <sys/stat.h>
 #include <filesystem>
+#include <iostream>
 #include <sstream>
 #include <stacktrace>
 #include <unordered_map>
@@ -23,35 +24,40 @@ namespace logger
     return std::make_unique<thread_name_formatter>();
   }
 
+  // The null-checks below (console_sink_/file_sink_/logger_) never take
+  // their false branch in practice: build() always sets all three before
+  // anything else on this impl can be called (see build() further down),
+  // and there is no public path to reach an impl before build() has run.
+  // Kept as a defensive fallback, not as a tested path.
   // clang-format off
-  enum level Logger::impl::console_level() const noexcept { return console_sink_ ? static_cast<enum level>(console_sink_->level()) : level::off; }
-  enum level Logger::impl::file_level() const noexcept    { return file_sink_    ? static_cast<enum level>(file_sink_->level())    : level::off; }
-  enum level Logger::impl::level() const noexcept         { return logger_      ? static_cast<enum level>(logger_->level())       : level::off; }
+  enum level Logger::impl::console_level() const noexcept { return console_sink_ ? static_cast<enum level>(console_sink_->level()) : level::off; } // GCOVR_EXCL_BR_LINE
+  enum level Logger::impl::file_level() const noexcept    { return file_sink_    ? static_cast<enum level>(file_sink_->level())    : level::off; } // GCOVR_EXCL_BR_LINE
+  enum level Logger::impl::level() const noexcept         { return logger_      ? static_cast<enum level>(logger_->level())       : level::off; } // GCOVR_EXCL_BR_LINE
   // clang-format on
 
   void Logger::impl::set_console_level(enum level l)
   {
-    if (console_sink_) console_sink_->set_level(static_cast<spdlog::level::level_enum>(l));
+    if (console_sink_) console_sink_->set_level(static_cast<spdlog::level::level_enum>(l)); // GCOVR_EXCL_BR_LINE
   }
 
   void Logger::impl::set_file_level(enum level l)
   {
-    if (file_sink_) file_sink_->set_level(static_cast<spdlog::level::level_enum>(l));
+    if (file_sink_) file_sink_->set_level(static_cast<spdlog::level::level_enum>(l)); // GCOVR_EXCL_BR_LINE
   }
 
   void Logger::impl::set_level(enum level l)
   {
-    if (logger_) logger_->set_level(static_cast<spdlog::level::level_enum>(l));
+    if (logger_) logger_->set_level(static_cast<spdlog::level::level_enum>(l)); // GCOVR_EXCL_BR_LINE
   }
 
   void Logger::impl::flush() const
   {
-    if (logger_) logger_->flush();
+    if (logger_) logger_->flush(); // GCOVR_EXCL_BR_LINE
   }
 
   void Logger::impl::flush_on(enum level l)
   {
-    if (logger_) logger_->flush_on(static_cast<spdlog::level::level_enum>(l));
+    if (logger_) logger_->flush_on(static_cast<spdlog::level::level_enum>(l)); // GCOVR_EXCL_BR_LINE
   }
 
   void Logger::impl::_log(enum level l, std::string_view s) const { logger_->log(static_cast<spdlog::level::level_enum>(l), s); }
@@ -122,7 +128,32 @@ namespace logger
       std::string(pattern), spdlog::pattern_time_type::local, spdlog::details::os::default_eol, std::move(flags));
   }
 
-  Logger::impl::impl(const logger_config& cfg) { build(cfg); }
+  std::expected<std::unique_ptr<Logger::impl>, std::string> Logger::impl::create(const logger_config& cfg)
+  {
+    // impl() itself never throws (it default-constructs three null
+    // shared_ptrs and nothing else) - only build() can, so it alone needs
+    // catching. std::exception covers both this file's own
+    // std::runtime_error (mkdir failure) and spdlog::spdlog_ex (sink
+    // construction failure, e.g. an unwritable log file) - spdlog_ex derives
+    // from std::exception, so there is no need to name it separately here.
+    auto p = std::unique_ptr<impl>(new impl()); // GCOVR_EXCL_BR_LINE -- unique_ptr's own null-check branch, not something a caller-visible path can steer
+    try
+    {
+      p->build(cfg);
+    }
+    // Same gcov branch-attribution quirk noted on logger_config.cpp's
+    // catches - this one is exercised too (see "Logger::create returns an
+    // error instead of throwing...").
+    catch (const std::exception& e) // GCOVR_EXCL_BR_LINE
+    {
+      // No sink exists yet to log this through - stderr is the only
+      // destination left, same as load_logger_config()'s own fallback
+      // message (logger_config.cpp).
+      std::cerr << "logger::Logger::create() failed: " << e.what() << '\n';
+      return std::unexpected(e.what());
+    }
+    return p;
+  }
 
   void Logger::impl::build(const logger_config& cfg)
   {
@@ -143,7 +174,7 @@ namespace logger
     file_sink_->set_formatter(make_formatter(cfg.pattern));
     set_file_level(cfg.file_level);
 
-    std::vector<spdlog::sink_ptr> sinks{console_sink_, file_sink_};
+    std::vector<spdlog::sink_ptr> sinks{console_sink_, file_sink_}; // GCOVR_EXCL_BR_LINE -- std::vector's own bad_alloc branch, not exercised on purpose
 
     if (cfg.run_mode == mode::async)
     {

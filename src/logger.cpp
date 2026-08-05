@@ -7,7 +7,15 @@ namespace logger
 {
   Logger* Logger::signal_target_ = nullptr; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
 
-  Logger::Logger(const logger_config& cfg) : pimpl_(std::make_unique<impl>(cfg)) {}
+  std::expected<std::unique_ptr<Logger>, std::string> Logger::create(const logger_config& cfg)
+  {
+    auto built = impl::create(cfg);
+    if (! built) return std::unexpected(std::move(built).error());
+    // NOLINTNEXTLINE(modernize-make-unique) -- Logger's constructor is private; make_unique can't reach it from here
+    return std::unique_ptr<Logger>(new Logger(std::move(*built))); // GCOVR_EXCL_BR_LINE -- unique_ptr's own null-check branch, not something a caller-visible path can steer
+  }
+
+  Logger::Logger(std::unique_ptr<impl> p) noexcept : pimpl_(std::move(p)) {}
 
   Logger::~Logger()
   {
@@ -29,8 +37,6 @@ namespace logger
 
   void Logger::log_exception_with_chain(const std::exception& e, enum level l) const { pimpl_->log_exception_with_chain(e, l); }
   void Logger::log_current_exception_with_chain(enum level l) const { pimpl_->log_current_exception_with_chain(l); }
-
-  void Logger::log_nested_chain(const std::exception& e, int depth) const { pimpl_->log_nested_chain(e, depth); }
 
   void Logger::log_backtrace(const std::string& title) const { impl::log_backtrace(*this, title); }
 
@@ -70,7 +76,7 @@ namespace logger
 
         self->flush();
         std::abort();
-      });
+      }); // GCOVR_EXCL_LINE -- unreachable: std::abort() above never returns, so this closing paren is never "reached" in gcov's own accounting
   }
 
   void Logger::setup_signal_handler() const
@@ -96,7 +102,12 @@ namespace logger
 
   const char* Logger::signal_name(int sig)
   {
-    switch (sig)
+    // Unreachable in practice: signal_handler is only ever registered (via
+    // setup_signal_handler()) for the five signals listed below, so sig is
+    // never anything else here - the default: case is a safety net, not a
+    // tested path. gcov attributes the switch's jump-table branch to this
+    // line, not to default: itself, hence the marker up here.
+    switch (sig) // GCOVR_EXCL_BR_LINE
     {
     case SIGSEGV: return "SIGSEGV";
     case SIGABRT: return "SIGABRT";

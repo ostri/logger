@@ -39,7 +39,12 @@ namespace
     {
       file >> j;
     }
-    catch (const std::exception&)
+    // gcov reports this catch's own "entered via throw vs. fell through"
+    // branch on the catch line itself, which --exclude-throw-branches
+    // doesn't cover - the catch *is* exercised (see "load_logger_config
+    // falls back when LOG_CONFIG points at malformed JSON" in
+    // test_logger.cpp), this is purely how gcov attributes the branch.
+    catch (const std::exception&) // GCOVR_EXCL_BR_LINE
     {
       return std::nullopt;
     }
@@ -58,7 +63,10 @@ namespace
       cfg.log_folder       = j.value("log_folder", cfg.log_folder);
       cfg.flush_on          = level_from_string(j.value("flush_on", "warn"));
     }
-    catch (const std::exception&)
+    // Same gcov branch-attribution quirk as the catch above - this one is
+    // exercised too (see "load_logger_config falls back when a value has
+    // the wrong JSON type").
+    catch (const std::exception&) // GCOVR_EXCL_BR_LINE
     {
       return std::nullopt;
     }
@@ -79,6 +87,6 @@ namespace logger
 
     if (auto cfg = parse_config_file(std::string(config_path))) return *cfg;
 
-    return logger_config{.console_level = level::warn, .file_level = level::warn};
+    return logger_config{.console_level = level::warn, .file_level = level::warn}; // GCOVR_EXCL_BR_LINE -- std::string field allocation's own bad_alloc branch, not exercised on purpose
   }
 } // namespace logger

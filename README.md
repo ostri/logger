@@ -51,17 +51,32 @@ signal/terminate logging) publicly, so a consumer gets it transitively without a
 ### constructing a Logger
 
 A `Logger` is built from a `logger_config` - either populated by hand, or loaded from a file (see
-"configuration file" below). It is neither copyable nor movable: pass it around by `const
-Logger&`/`Logger&`, never by value.
+"configuration file" below) - via `Logger::create()`, never a constructor directly: `Logger` is
+not allowed to throw, so anything that can go wrong while setting up its sinks (an unwritable
+`log_folder`, a rotating file it cannot open, ...) is reported through the returned
+`std::expected` instead, already logged to stderr by `create()` itself. `Logger` is neither
+copyable nor movable, so `create()` hands back a `std::unique_ptr<Logger>`, not a `Logger` by
+value - pass the `Logger` itself around by `const Logger&`/`Logger&` from there on, never by value.
 
 ```cpp
 #include "logger/logger.hpp"
 #include "logger/logger_config.hpp"
 
-logger::logger_config cfg = logger::load_logger_config();
-logger::Logger         log(cfg);
+logger::logger_config cfg      = logger::load_logger_config();
+auto                   log_ptr = logger::Logger::create(cfg);
+if (! log_ptr)
+{
+  // cfg's sinks could not be built (create() already logged why, to
+  // stderr) - decide what that means for this program: abort startup,
+  // fall back to a different logger_config, or something else entirely.
+  return 1;
+}
+logger::Logger& log = **log_ptr; // everything below takes a Logger by reference, same as any other function would
 log.info("started, pid={}", getpid());
 ```
+
+The rest of this section (and the examples below it) assume a successfully constructed `log` -
+either the `Logger&` from the snippet above, or any function parameter taking one.
 
 ### debug()/trace() elimination in release
 
@@ -95,7 +110,8 @@ sink latency (a slow disk, a full terminal).
 
 ```cpp
 logger::logger_config cfg{.run_mode = logger::mode::async, .app_name = "worker"};
-logger::Logger         log(cfg);
+auto                   log_ptr = logger::Logger::create(cfg).value(); // see "constructing a Logger" above for error handling
+logger::Logger&        log     = *log_ptr;
 log.info("this call returns without waiting for the write to land");
 log.flush(); // wait for the background thread to catch up, e.g. before shutdown
 ```
@@ -212,6 +228,13 @@ ctest --test-dir build/debug --output-on-failure
 
 The test binary (`logger_test`) is only built when `BUILD_TESTING` is on, which is the default
 for a standalone (top-level) build of this project.
+
+`signal_terminate_helper` is a second, plain (Catch2-free) executable built alongside
+`logger_test` - `setup_signal_handler()`/`setup_terminate_handler()` end in `std::exit()`/
+`std::abort()`, which the Catch2 binary can't survive calling directly (Catch2 installs its own
+fatal-condition handler for the same signals). Tests for those two exercise this helper via
+fork()/exec() instead and only observe its exit status/log output - see
+[test/helper/signal_terminate_helper.cpp](test/helper/signal_terminate_helper.cpp).
 
 ### dependencies
 

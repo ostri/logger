@@ -12,10 +12,25 @@
 #include "logger/logger.hpp"
 #include "logger/logger_config.hpp"
 #include <chrono>
+#include <cstdlib>
+#include <memory>
 #include <thread>
 
 namespace
 {
+  /// Logger::create() is not allowed to throw - it reports a broken
+  /// logger_config (an unwritable log_folder, ...) through std::expected
+  /// instead, already logged to stderr by create() itself (see
+  /// README.md "constructing a Logger"). A demo has nothing smarter to do
+  /// with that than give up, so this just turns the expected's already-
+  /// logged failure into a process exit - a real program would decide for
+  /// itself what a broken log destination means for it.
+  std::unique_ptr<logger::Logger> require_logger(const logger::logger_config& cfg)
+  {
+    auto log = logger::Logger::create(cfg);
+    if (! log) std::exit(1); // NOLINT(concurrency-mt-unsafe)
+    return std::move(*log);
+  }
   /// @brief property 1: logging is configured from a file, not hardcoded
   ///
   /// load_logger_config() tries the LOG_CONFIG environment variable first,
@@ -29,8 +44,8 @@ namespace
     fmt::print(
       "loaded config: app_name={}, console_level={}, file_level={}\n", cfg.app_name, static_cast<int>(cfg.console_level), static_cast<int>(cfg.file_level));
 
-    const logger::Logger log(cfg);
-    log.info("Logger constructed from a config file - this line goes to both console and file.");
+    const auto log = require_logger(cfg);
+    log->info("Logger constructed from a config file - this line goes to both console and file.");
   }
 
   /// @brief property 2: debug()/trace() compile out entirely in a release build
@@ -43,11 +58,11 @@ namespace
   void show_debug_trace_elimination()
   {
     fmt::print("\n--- 2. debug()/trace() elimination in a release build ---\n");
-    const logger::Logger log(logger::logger_config{
+    const auto log = require_logger(logger::logger_config{
       .app_name = "demo_trace", .console_level = logger::level::trace, .file_level = logger::level::trace, .log_folder = "./logs"});
 
-    log.debug("this debug message and the work to format it do not exist in a release build");
-    log.trace("neither does this trace message");
+    log->debug("this debug message and the work to format it do not exist in a release build");
+    log->trace("neither does this trace message");
     fmt::print("(check logs/demo_trace_*.log: these two lines are present in a debug build, absent in release)\n");
   }
 
@@ -70,17 +85,17 @@ namespace
     // effective level is whichever sink asked for the most detail) - both
     // are set explicitly here so "quiet" really is quiet on every sink, not
     // accidentally verbose through file_level's own default.
-    const logger::Logger quiet(
-      logger::logger_config{.app_name = "demo_quiet", .console_level = logger::level::warn, .file_level = logger::level::warn, .log_folder = "./logs"});
-    const logger::Logger verbose(
+    const auto quiet =
+      require_logger(logger::logger_config{.app_name = "demo_quiet", .console_level = logger::level::warn, .file_level = logger::level::warn, .log_folder = "./logs"});
+    const auto verbose = require_logger(
       logger::logger_config{.app_name = "demo_verbose", .console_level = logger::level::trace, .file_level = logger::level::trace, .log_folder = "./logs"});
 
-    fmt::print("quiet logger, trace active: {}\n", quiet.active(logger::level::trace));
-    if (quiet.active(logger::level::trace)) quiet.trace("{}", expensive_diagnostic());
+    fmt::print("quiet logger, trace active: {}\n", quiet->active(logger::level::trace));
+    if (quiet->active(logger::level::trace)) quiet->trace("{}", expensive_diagnostic());
     else fmt::print("  (skipped: expensive_diagnostic() was not called)\n");
 
-    fmt::print("verbose logger, trace active: {}\n", verbose.active(logger::level::trace));
-    if (verbose.active(logger::level::trace)) verbose.trace("{}", expensive_diagnostic());
+    fmt::print("verbose logger, trace active: {}\n", verbose->active(logger::level::trace));
+    if (verbose->active(logger::level::trace)) verbose->trace("{}", expensive_diagnostic());
   }
 
   /// @brief property 4: sync vs async logging
@@ -94,14 +109,14 @@ namespace
   {
     fmt::print("\n--- 4. sync vs async logging ---\n");
 
-    const logger::Logger sync_log(
+    const auto sync_log = require_logger(
       logger::logger_config{.app_name = "demo_sync", .run_mode = logger::mode::sync, .console_level = logger::level::info, .log_folder = "./logs"});
-    sync_log.info("sync: this line has already reached its sinks by the time info() returns");
+    sync_log->info("sync: this line has already reached its sinks by the time info() returns");
 
-    const logger::Logger async_log(
+    const auto async_log = require_logger(
       logger::logger_config{.app_name = "demo_async", .run_mode = logger::mode::async, .console_level = logger::level::info, .log_folder = "./logs"});
-    async_log.info("async: this line was handed to a background thread pool");
-    async_log.flush(); // wait for the background thread to catch up before the demo exits
+    async_log->info("async: this line was handed to a background thread pool");
+    async_log->flush(); // wait for the background thread to catch up before the demo exits
   }
 
   /// @brief bonus: a caller's own structured error type, logged through the
@@ -112,12 +127,12 @@ namespace
   void show_structured_error_logging()
   {
     fmt::print("\n--- bonus: logging a caller-defined error type ---\n");
-    const logger::Logger log(
+    const auto log = require_logger(
       logger::logger_config{.app_name = "demo_error", .console_level = logger::level::error, .file_level = logger::level::error, .log_folder = "./logs"});
 
     const demo::error_info err(demo::error_code::parse_failed, "unexpected token", "input.yaml", 42);
-    log.error(err);
-    log.critical(err);
+    log->error(err);
+    log->critical(err);
   }
 } // namespace
 

@@ -5,6 +5,7 @@
 #include <spdlog/pattern_formatter.h>
 #include <spdlog/sinks/daily_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include <expected>
 #include <memory>
 #include <string>
 
@@ -24,7 +25,9 @@ namespace logger
   class Logger::impl
   {
   public:
-    explicit impl(const logger_config& cfg);
+    /// @brief builds an impl from cfg, or an error describing why it could
+    /// not be built - never throws (see Logger::create()'s own comment).
+    [[nodiscard]] static std::expected<std::unique_ptr<impl>, std::string> create(const logger_config& cfg);
 
     [[nodiscard]] enum level console_level() const noexcept;
     [[nodiscard]] enum level file_level() const noexcept;
@@ -42,8 +45,14 @@ namespace logger
     void        log_nested_chain(const std::exception& e, int depth) const;
     static void log_backtrace(const Logger& self, const std::string& title);
   private:
+    impl() = default;
+
     static std::unique_ptr<spdlog::pattern_formatter> make_formatter(std::string_view pattern);
-    void                                                build(const logger_config& cfg);
+    // Populates this impl's sinks/logger from cfg. May throw - anything it
+    // throws (its own log_folder creation failure, or spdlog's own sink
+    // constructors failing to open a file) is caught in create() above,
+    // which is the only caller.
+    void build(const logger_config& cfg);
 
     std::shared_ptr<spdlog::sinks::stdout_color_sink_mt> console_sink_;
     std::shared_ptr<spdlog::sinks::daily_file_sink_mt>   file_sink_;

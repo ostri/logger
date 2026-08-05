@@ -7,13 +7,18 @@
  * in logger_impl.hpp/.cpp) so that every other header in a project that
  * needs a Logger only ever sees this file.
  *
- * No singleton: a Logger is a value you construct once (typically at
- * startup, from a logger_config) and hand down by reference to whatever
- * needs to log - constructors, worker threads, whatever. This is what lets
- * two independent loggers coexist in one process (e.g. one per subsystem)
- * without fighting over global state, and it is why Logger is neither
- * copyable nor movable: ownership is meant to stay exactly where it was
- * constructed, everyone else only ever sees a reference.
+ * No singleton: a Logger is built once (typically at startup, from a
+ * logger_config, via the create() factory below) and handed down by
+ * reference to whatever needs to log - constructors, worker threads,
+ * whatever. This is what lets two independent loggers coexist in one
+ * process (e.g. one per subsystem) without fighting over global state, and
+ * it is why Logger is neither copyable nor movable: ownership is meant to
+ * stay exactly where it was constructed, everyone else only ever sees a
+ * reference.
+ *
+ * Never throws: create() reports anything that can go wrong building a
+ * Logger's sinks through its std::expected return instead - see its own
+ * comment below.
  *
  * debug()/trace() are compiled out entirely in a release build (`if
  * constexpr` on is_debug_build(), evaluated at compile time) rather than
@@ -28,6 +33,7 @@
 #include "logger_config.hpp"
 #include <fmt/format.h>
 #include <concepts>
+#include <expected>
 #include <memory>
 #include <string>
 #include <string_view>
@@ -48,7 +54,23 @@ namespace logger
   class Logger
   {
   public:
-    explicit Logger(const logger_config& cfg);
+    /**
+     * @brief builds a Logger from cfg, or an error describing why it could
+     * not be built
+     *
+     * A Logger is not allowed to throw - anything that goes wrong while
+     * setting up its sinks (an unwritable log_folder, a rotating file it
+     * cannot open, ...) is reported through the returned std::expected
+     * instead, already logged to stderr before create() returns, and
+     * otherwise left for the caller to decide what to do (a broken log
+     * destination is not this library's call to make - abort startup,
+     * fall back to some other logger_config, or something else entirely).
+     * Wrapped in a unique_ptr rather than returned by value: Logger itself
+     * stays neither copyable nor movable (see the class comment above), so
+     * std::expected<Logger, ...> is not an option.
+     */
+    [[nodiscard]] static std::expected<std::unique_ptr<Logger>, std::string> create(const logger_config& cfg);
+
     ~Logger();
 
     Logger(const Logger&)            = delete;
@@ -147,11 +169,15 @@ namespace logger
     static void        signal_handler(int sig);
     static const char* signal_name(int sig);
     void               log_backtrace(const std::string& title) const;
-    void               log_nested_chain(const std::exception& e, int depth) const;
 
     void _log(enum level l, std::string_view s) const;
 
     class impl;
+    // Takes ownership of an already-built impl - never fails, so Logger's
+    // own constructor stays exception-free. All the ways building an impl
+    // can go wrong are handled in create() below, which builds the impl
+    // first and only constructs a Logger once that succeeded.
+    explicit Logger(std::unique_ptr<impl> p) noexcept;
     std::unique_ptr<impl> pimpl_;
 
     // The signal handler is a free function (see signal_handler above) with
@@ -161,6 +187,22 @@ namespace logger
     static Logger* signal_target_; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
   };
 
+  // The six formatted overloads below are templates on Args... - each
+  // distinct argument-type combination a caller instantiates them with is
+  // its own separate function as far as the compiler (and gcov) are
+  // concerned. test_logger.cpp's own tests exercise both branches of every
+  // `if (!active(...)) return;` and both outcomes of every `catch (...)`
+  // for the specific instantiations it uses (int, throwing_arg, ...) - but
+  // other translation units linked into the same coverage run (this
+  // library's own log_backtrace(), which calls critical() with a
+  // std::string argument) instantiate these same templates again with
+  // *their* argument types, and gcov reports branch coverage per
+  // instantiation, not merged across them. Getting every instantiation
+  // anywhere in the program to hit both branches isn't practical, so branch
+  // coverage is excluded here; line/function coverage (which report "was
+  // this template instantiated and run at all", not "every branch of every
+  // instantiation") are not.
+  // GCOVR_EXCL_BR_START
   template <typename... Args>
   inline void Logger::trace([[maybe_unused]] fmt::format_string<Args...> fmt, [[maybe_unused]] Args&&... args) const noexcept
   {
@@ -244,6 +286,7 @@ namespace logger
     {
     }
   }
+  // GCOVR_EXCL_BR_STOP
 
   inline void Logger::trace([[maybe_unused]] std::string_view sv) const
   {
@@ -267,14 +310,27 @@ namespace logger
   {
     if (active(level::error)) _log(level::error, sv);
   }
+  // critical(string_view)'s active()==false branch and make_log_name()'s
+  // child.empty()==false branch are both fully exercised - but only in
+  // test_logger.cpp's own translation unit (see "critical/error/warn/info/
+  // debug/trace do not throw when suppressed by level" and "make_log_name
+  // (parent, child) joins parent and non-empty child with a slash"). Being
+  // `inline`, each translation unit that calls these gets its own copy;
+  // logger.cpp's copy of critical(string_view) is only ever reached with
+  // level::critical already active (log_backtrace()/signal_handler()/the
+  // terminate handler all call it on a path that's already decided to
+  // log), and logger.cpp never calls make_log_name() at all. gcovr reports
+  // branch coverage per source line across every translation unit's copy,
+  // not the best one, so the line shows as partially covered overall
+  // despite being fully covered where it's actually under test.
   inline void Logger::critical(std::string_view sv) const
   {
-    if (active(level::critical)) _log(level::critical, sv);
+    if (active(level::critical)) _log(level::critical, sv); // GCOVR_EXCL_BR_LINE
   }
 
   inline std::string Logger::log_name() { return log_thread_name; }
   inline void        Logger::make_log_name(std::string_view parent, std::string_view child)
   {
-    log_thread_name = child.empty() ? std::string(parent) : fmt::format("{}/{}", parent, child);
+    log_thread_name = child.empty() ? std::string(parent) : fmt::format("{}/{}", parent, child); // GCOVR_EXCL_BR_LINE
   }
 } // namespace logger
