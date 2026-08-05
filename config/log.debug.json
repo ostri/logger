@@ -1,0 +1,12 @@
+{
+  "app_name": "app",
+  "mode": "sync",
+  "console_level": "warn",
+  "file_level": "trace",
+  "rotation_hour": 2,
+  "rotation_minute": 30,
+  "keep_days": 14,
+  "pattern": "[%Y-%m-%d %H:%M:%S.%e] [%n] [%l] [%*] %v",
+  "log_folder": "./logs",
+  "flush_on": "trace"
+}
