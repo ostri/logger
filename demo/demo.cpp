@@ -11,10 +11,7 @@
 #include "error_info.hpp"
 #include "logger/logger.hpp"
 #include "logger/logger_config.hpp"
-#include <chrono>
 #include <cstdlib>
-#include <memory>
-#include <thread>
 
 namespace
 {
@@ -41,8 +38,10 @@ namespace
   {
     fmt::print("\n--- 1. configuring logging from a file ---\n");
     const auto cfg = logger::load_logger_config("config/log.debug.json");
-    fmt::print(
-      "loaded config: app_name={}, console_level={}, file_level={}\n", cfg.app_name, static_cast<int>(cfg.console_level), static_cast<int>(cfg.file_level));
+    fmt::print("loaded config: app_name={}, console_level={}, file_level={}\n",
+               cfg.app_name,
+               static_cast<int>(cfg.console_level),
+               static_cast<int>(cfg.file_level));
 
     const auto log = require_logger(cfg);
     log->info("Logger constructed from a config file - this line goes to both console and file.");
@@ -85,10 +84,10 @@ namespace
     // effective level is whichever sink asked for the most detail) - both
     // are set explicitly here so "quiet" really is quiet on every sink, not
     // accidentally verbose through file_level's own default.
-    const auto quiet =
-      require_logger(logger::logger_config{.app_name = "demo_quiet", .console_level = logger::level::warn, .file_level = logger::level::warn, .log_folder = "./logs"});
-    const auto verbose = require_logger(
-      logger::logger_config{.app_name = "demo_verbose", .console_level = logger::level::trace, .file_level = logger::level::trace, .log_folder = "./logs"});
+    const auto quiet   = require_logger(logger::logger_config{
+      .app_name = "demo_quiet", .console_level = logger::level::warn, .file_level = logger::level::warn, .log_folder = "./logs"});
+    const auto verbose = require_logger(logger::logger_config{
+      .app_name = "demo_verbose", .console_level = logger::level::trace, .file_level = logger::level::trace, .log_folder = "./logs"});
 
     fmt::print("quiet logger, trace active: {}\n", quiet->active(logger::level::trace));
     if (quiet->active(logger::level::trace)) quiet->trace("{}", expensive_diagnostic());
@@ -109,12 +108,12 @@ namespace
   {
     fmt::print("\n--- 4. sync vs async logging ---\n");
 
-    const auto sync_log = require_logger(
-      logger::logger_config{.app_name = "demo_sync", .run_mode = logger::mode::sync, .console_level = logger::level::info, .log_folder = "./logs"});
+    const auto sync_log = require_logger(logger::logger_config{
+      .app_name = "demo_sync", .run_mode = logger::mode::sync, .console_level = logger::level::info, .log_folder = "./logs"});
     sync_log->info("sync: this line has already reached its sinks by the time info() returns");
 
-    const auto async_log = require_logger(
-      logger::logger_config{.app_name = "demo_async", .run_mode = logger::mode::async, .console_level = logger::level::info, .log_folder = "./logs"});
+    const auto async_log = require_logger(logger::logger_config{
+      .app_name = "demo_async", .run_mode = logger::mode::async, .console_level = logger::level::info, .log_folder = "./logs"});
     async_log->info("async: this line was handed to a background thread pool");
     async_log->flush(); // wait for the background thread to catch up before the demo exits
   }
@@ -127,8 +126,8 @@ namespace
   void show_structured_error_logging()
   {
     fmt::print("\n--- bonus: logging a caller-defined error type ---\n");
-    const auto log = require_logger(
-      logger::logger_config{.app_name = "demo_error", .console_level = logger::level::error, .file_level = logger::level::error, .log_folder = "./logs"});
+    const auto log = require_logger(logger::logger_config{
+      .app_name = "demo_error", .console_level = logger::level::error, .file_level = logger::level::error, .log_folder = "./logs"});
 
     const demo::error_info err(demo::error_code::parse_failed, "unexpected token", "input.yaml", 42);
     log->error(err);
