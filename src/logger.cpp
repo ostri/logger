@@ -1,5 +1,7 @@
 #include "logger_impl.hpp"
 #include <csignal>
+#include <cstdlib>
+#include <fmt/format.h>
 #include <sstream>
 #include <stacktrace>
 
@@ -12,10 +14,26 @@ namespace logger
     auto built = impl::create(cfg);
     if (! built) return std::unexpected(std::move(built).error());
     // NOLINTNEXTLINE(modernize-make-unique) -- Logger's constructor is private; make_unique can't reach it from here
-    return std::unique_ptr<Logger>(new Logger(std::move(*built))); // GCOVR_EXCL_BR_LINE -- unique_ptr's own null-check branch, not something a caller-visible path can steer
+    return std::unique_ptr<Logger>(new Logger(
+      std::move(*built))); // GCOVR_EXCL_BR_LINE -- unique_ptr's own null-check branch, not something a caller-visible path can steer
   }
 
-  Logger::Logger(std::unique_ptr<impl> p) noexcept : pimpl_(std::move(p)) {}
+  std::unique_ptr<Logger> Logger::create_or_exit(const logger_config& cfg)
+  {
+    auto built = create(cfg);
+    if (! built)
+    {
+      fmt::println("Fatal error: can't initialize logger. '{}'\n exiting...", built.error());
+      std::exit(1); // NOLINT(concurrency-mt-unsafe)
+    }
+    make_log_name(cfg.app_name);
+    return std::move(*built);
+  }
+
+  Logger::Logger(std::unique_ptr<impl> p) noexcept
+  : pimpl_(std::move(p))
+  {
+  }
 
   Logger::~Logger()
   {
@@ -76,12 +94,13 @@ namespace logger
 
         self->flush();
         std::abort();
-      }); // GCOVR_EXCL_LINE -- unreachable: std::abort() above never returns, so this closing paren is never "reached" in gcov's own accounting
+      }); // GCOVR_EXCL_LINE -- unreachable: std::abort() above never returns, so this closing paren is never "reached" in gcov's own
+          // accounting
   }
 
   void Logger::setup_signal_handler() const
   {
-    signal_target_ = const_cast<Logger*>(this); // NOLINT(cppcoreguidelines-pro-type-const-cast)
+    signal_target_                   = const_cast<Logger*>(this); // NOLINT(cppcoreguidelines-pro-type-const-cast)
     const std::array<int, 5> signals = {SIGSEGV, SIGABRT, SIGFPE, SIGILL, SIGTERM};
     // NOLINTNEXTLINE(cert-err33-c)
     for (const int sig : signals) std::signal(sig, Logger::signal_handler);

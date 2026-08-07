@@ -71,6 +71,25 @@ namespace logger
      */
     [[nodiscard]] static std::expected<std::unique_ptr<Logger>, std::string> create(const logger_config& cfg);
 
+    /**
+     * @brief create(cfg), or print the error and exit(1) if it fails
+     *
+     * The common case at the top of main(): a program that cannot get a
+     * Logger built has nowhere left to report anything, so this prints
+     * create()'s error to stdout and terminates the process rather than
+     * handing every caller the same three lines (check the std::expected,
+     * print, exit) to repeat. Also calls make_log_name(cfg.app_name) on
+     * success, so the returned Logger is immediately ready for %* to read
+     * its logical thread name - the other half of what a caller normally
+     * does right after building one.
+     *
+     * Not for anything other than a program's own startup: a library or a
+     * worker thread that fails to build a Logger should still get to decide
+     * for itself what "no logger" means, which is exactly what create()
+     * (returning std::expected instead of exiting) is for.
+     */
+    [[nodiscard]] static std::unique_ptr<Logger> create_or_exit(const logger_config& cfg);
+
     ~Logger();
 
     Logger(const Logger&)            = delete;
@@ -146,7 +165,7 @@ namespace logger
     void flush_on(enum level l);
 
     /// @brief sets the logical thread name %* reads - see log_thread_name above
-    static void make_log_name(std::string_view parent, std::string_view child = "");
+    static void                      make_log_name(std::string_view parent, std::string_view child = "");
     [[nodiscard]] static std::string log_name();
 
     /// @brief logs e.what(), a stack trace captured at the call site, and -

@@ -29,6 +29,12 @@
  *   terminate_no_target   - setup_terminate_handler(), Logger destroyed, then std::terminate() -
  *                            covers the installed handler's self == nullptr branch, same idea as
  *                            sigterm_no_target above
+ *   create_or_exit_fail   - Logger::create_or_exit() with a log_folder that cannot be created
+ *                            (same shape as "Logger::create returns an error instead of throwing
+ *                            when log_folder cannot be created" in test_logger.cpp, but through
+ *                            create_or_exit() instead of create() - covers create_or_exit()'s own
+ *                            exit(1) path, which (like the signal/terminate handlers above) ends
+ *                            the process and so cannot run inside the Catch2 binary itself)
  *
  * argv[2] is the log_folder to use (the parent picks a fresh temp directory
  * per test case, same as the rest of the suite).
@@ -91,7 +97,7 @@ namespace
   void install_gcov_dump_on_abort()
   {
 #ifdef LOGGER_TEST_COVERAGE_BUILD
-    struct sigaction act{}; // NOLINT(cppcoreguidelines-pro-type-member-init)
+    struct sigaction act{};          // NOLINT(cppcoreguidelines-pro-type-member-init)
     act.sa_handler = [](int /*sig*/) // NOLINT(cppcoreguidelines-avoid-c-arrays, misc-unused-parameters)
     {
       __gcov_dump();
@@ -106,7 +112,7 @@ namespace
 
   [[noreturn]] void run_sigterm(const std::string& log_folder, const std::string& app_name)
   {
-    logger_config  cfg{.app_name = app_name, .console_level = level::off, .file_level = level::critical, .log_folder = log_folder};
+    logger_config cfg{.app_name = app_name, .console_level = level::off, .file_level = level::critical, .log_folder = log_folder};
     const Logger* lg = require_logger(cfg);
     lg->setup_signal_handler();
     ::raise(SIGTERM);
@@ -117,7 +123,7 @@ namespace
   {
     {
       const logger_config cfg{.app_name = app_name, .console_level = level::off, .file_level = level::off, .log_folder = log_folder};
-      const auto           lg = Logger::create(cfg);
+      const auto          lg = Logger::create(cfg);
       if (! lg) std::abort();
       (*lg)->setup_signal_handler();
     } // Logger destroyed here -> signal_target_ reset to nullptr
@@ -129,7 +135,7 @@ namespace
   /// for why raise()-ing each of these is safe here.
   [[noreturn]] void run_signal(int sig, const std::string& log_folder, const std::string& app_name)
   {
-    logger_config  cfg{.app_name = app_name, .console_level = level::off, .file_level = level::critical, .log_folder = log_folder};
+    logger_config cfg{.app_name = app_name, .console_level = level::off, .file_level = level::critical, .log_folder = log_folder};
     const Logger* lg = require_logger(cfg);
     lg->setup_signal_handler();
     ::raise(sig);
@@ -138,7 +144,7 @@ namespace
 
   [[noreturn]] void run_terminate_with_exc(const std::string& log_folder, const std::string& app_name)
   {
-    logger_config  cfg{.app_name = app_name, .console_level = level::off, .file_level = level::critical, .log_folder = log_folder};
+    logger_config cfg{.app_name = app_name, .console_level = level::off, .file_level = level::critical, .log_folder = log_folder};
     const Logger* lg = require_logger(cfg);
     install_gcov_dump_on_abort();
     lg->setup_terminate_handler();
@@ -151,7 +157,7 @@ namespace
   /// is logged).
   [[noreturn]] void run_terminate_with_nonstd_exc(const std::string& log_folder, const std::string& app_name)
   {
-    logger_config  cfg{.app_name = app_name, .console_level = level::off, .file_level = level::critical, .log_folder = log_folder};
+    logger_config cfg{.app_name = app_name, .console_level = level::off, .file_level = level::critical, .log_folder = log_folder};
     const Logger* lg = require_logger(cfg);
     install_gcov_dump_on_abort();
     lg->setup_terminate_handler();
@@ -160,7 +166,7 @@ namespace
 
   [[noreturn]] void run_terminate_no_exc(const std::string& log_folder, const std::string& app_name)
   {
-    logger_config  cfg{.app_name = app_name, .console_level = level::off, .file_level = level::critical, .log_folder = log_folder};
+    logger_config cfg{.app_name = app_name, .console_level = level::off, .file_level = level::critical, .log_folder = log_folder};
     const Logger* lg = require_logger(cfg);
     install_gcov_dump_on_abort();
     lg->setup_terminate_handler();
@@ -178,11 +184,25 @@ namespace
     install_gcov_dump_on_abort();
     {
       const logger_config cfg{.app_name = app_name, .console_level = level::off, .file_level = level::off, .log_folder = log_folder};
-      const auto           lg = Logger::create(cfg);
+      const auto          lg = Logger::create(cfg);
       if (! lg) std::abort();
       (*lg)->setup_terminate_handler();
     } // Logger destroyed here -> signal_target_ reset to nullptr
     std::terminate();
+  }
+
+  /// covers create_or_exit()'s own exit(1) path - log_folder is expected to
+  /// be a path whose parent does not exist either (not just the leaf), same
+  /// as the negative Logger::create() test in test_logger.cpp, so build()'s
+  /// mkdir() fails without -p and create() returns an error. Nothing to log
+  /// through on this path (there is no Logger yet), so the parent process
+  /// only ever gets to check the exit code and stdout, not a log file.
+  [[noreturn]] void run_create_or_exit_fail(const std::string& log_folder, const std::string& app_name)
+  {
+    const logger_config cfg{.app_name = app_name, .console_level = level::off, .file_level = level::off, .log_folder = log_folder};
+    const auto          lg = Logger::create_or_exit(cfg); // never returns - log_folder is unusable
+    (void)lg;
+    std::exit(3); // NOLINT(concurrency-mt-unsafe) -- unreachable if create_or_exit() did its job
   }
 } // namespace
 
@@ -190,9 +210,9 @@ int main(int argc, char** argv)
 {
   if (argc != 4) return 2;
 
-  const std::string_view scenario(argv[1]); // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  const std::string       log_folder(argv[2]); // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-  const std::string       app_name(argv[3]); // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  const std::string_view scenario(argv[1]);   // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  const std::string      log_folder(argv[2]); // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+  const std::string      app_name(argv[3]);   // NOLINT(cppcoreguidelines-pro-bounds-pointer-arithmetic)
 
   if (scenario == "sigterm") run_sigterm(log_folder, app_name);
   if (scenario == "sigterm_no_target") run_sigterm_no_target(log_folder, app_name);
@@ -204,5 +224,6 @@ int main(int argc, char** argv)
   if (scenario == "terminate_nonstd_exc") run_terminate_with_nonstd_exc(log_folder, app_name);
   if (scenario == "terminate_no_exc") run_terminate_no_exc(log_folder, app_name);
   if (scenario == "terminate_no_target") run_terminate_no_target(log_folder, app_name);
+  if (scenario == "create_or_exit_fail") run_create_or_exit_fail(log_folder, app_name);
   return 2;
 }

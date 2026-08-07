@@ -45,10 +45,8 @@ template <>
 struct fmt::formatter<throwing_arg>
 {
   static constexpr auto parse(format_parse_context& ctx) { return ctx.begin(); }
-  static auto            format(const throwing_arg& /*unused*/, format_context& /*ctx*/) -> format_context::iterator
-  {
-    throw std::runtime_error("throwing_arg always throws");
-  }
+  static auto           format(const throwing_arg& /*unused*/, format_context& /*ctx*/) -> format_context::iterator
+  { throw std::runtime_error("throwing_arg always throws"); }
 };
 
 namespace
@@ -60,7 +58,8 @@ namespace
   class env_guard
   {
   public:
-    explicit env_guard(std::string name) : name_(std::move(name))
+    explicit env_guard(std::string name)
+    : name_(std::move(name))
     {
       if (const char* v = std::getenv(name_.c_str()); v != nullptr) old_value_ = v; // NOLINT(concurrency-mt-unsafe)
     }
@@ -94,10 +93,10 @@ namespace
       fs::current_path(prev_, ec);
       fs::remove_all(dir_, ec);
     }
-    temp_dir_guard(const temp_dir_guard&)            = delete;
-    temp_dir_guard& operator=(const temp_dir_guard&) = delete;
-    temp_dir_guard(temp_dir_guard&&)                 = delete;
-    temp_dir_guard& operator=(temp_dir_guard&&)      = delete;
+    temp_dir_guard(const temp_dir_guard&)                     = delete;
+    temp_dir_guard& operator=(const temp_dir_guard&)          = delete;
+    temp_dir_guard(temp_dir_guard&&)                          = delete;
+    temp_dir_guard&               operator=(temp_dir_guard&&) = delete;
     [[nodiscard]] const fs::path& dir() const { return dir_; }
   private:
     fs::path                    prev_;
@@ -111,10 +110,7 @@ namespace
     out << content;
   }
 
-  logger_config console_cfg(level lvl = level::info)
-  {
-    return logger_config{.console_level = lvl, .file_level = lvl, .log_folder = "."};
-  }
+  logger_config console_cfg(level lvl = level::info) { return logger_config{.console_level = lvl, .file_level = lvl, .log_folder = "."}; }
 
   /// Logger::create() returns std::expected<unique_ptr<Logger>, string> -
   /// this is the "cfg is known-good, get me a Logger" shorthand every test
@@ -148,21 +144,21 @@ namespace
 TEST_CASE("Logger::create succeeds for a valid config", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            result = Logger::create(logger_config{.log_folder = "."});
+  const auto           result = Logger::create(logger_config{.log_folder = "."});
   CHECK(result.has_value());
 }
 
 TEST_CASE("Logger reports the level it was configured with", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::error));
+  const auto           lg = make_logger(console_cfg(level::error));
   CHECK(lg->level() == level::error);
 }
 
 TEST_CASE("Logger's level is the min of console and file level", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(logger_config{.console_level = level::warn, .file_level = level::trace, .log_folder = "."});
+  const auto           lg = make_logger(logger_config{.console_level = level::warn, .file_level = level::trace, .log_folder = "."});
   CHECK(lg->level() == level::trace);
 }
 
@@ -173,7 +169,7 @@ TEST_CASE("Logger's level is the min of console and file level", "[Logger][posit
 TEST_CASE("active is true for a level at or above the configured threshold", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::info));
+  const auto           lg = make_logger(console_cfg(level::info));
   CHECK(lg->active(level::info));
   CHECK(lg->active(level::warn));
   CHECK(lg->active(level::critical));
@@ -182,14 +178,14 @@ TEST_CASE("active is true for a level at or above the configured threshold", "[L
 TEST_CASE("active is false for a level below the configured threshold", "[Logger][negative]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::warn));
+  const auto           lg = make_logger(console_cfg(level::warn));
   CHECK_FALSE(lg->active(level::info));
 }
 
 TEST_CASE("set_level changes the active threshold", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::info));
+  const auto           lg = make_logger(console_cfg(level::info));
   lg->set_level(level::critical);
   CHECK(lg->level() == level::critical);
   CHECK_FALSE(lg->active(level::error));
@@ -202,7 +198,7 @@ TEST_CASE("set_level changes the active threshold", "[Logger][positive]")
 TEST_CASE("console_level/file_level report the levels each sink was configured with", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(logger_config{.console_level = level::error, .file_level = level::debug, .log_folder = "."});
+  const auto           lg = make_logger(logger_config{.console_level = level::error, .file_level = level::debug, .log_folder = "."});
   CHECK(lg->console_level() == level::error);
   CHECK(lg->file_level() == level::debug);
 }
@@ -210,7 +206,7 @@ TEST_CASE("console_level/file_level report the levels each sink was configured w
 TEST_CASE("set_console_level/set_file_level change only their own sink's level", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(logger_config{.console_level = level::warn, .file_level = level::warn, .log_folder = "."});
+  const auto           lg = make_logger(logger_config{.console_level = level::warn, .file_level = level::warn, .log_folder = "."});
   lg->set_console_level(level::critical);
   lg->set_file_level(level::trace);
   CHECK(lg->console_level() == level::critical);
@@ -220,7 +216,7 @@ TEST_CASE("set_console_level/set_file_level change only their own sink's level",
 TEST_CASE("flush_on does not throw and does not prevent further logging", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::info));
+  const auto           lg = make_logger(console_cfg(level::info));
   CHECK_NOTHROW(lg->flush_on(level::error));
   CHECK_NOTHROW(lg->info("still logs after flush_on changed"));
 }
@@ -235,7 +231,7 @@ TEST_CASE("flush_on does not throw and does not prevent further logging", "[Logg
 TEST_CASE("critical/error/warn/info do not throw when active", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::trace));
+  const auto           lg = make_logger(console_cfg(level::trace));
   CHECK_NOTHROW(lg->critical("critical message"));
   CHECK_NOTHROW(lg->error("error message"));
   CHECK_NOTHROW(lg->warn("warn message"));
@@ -247,7 +243,7 @@ TEST_CASE("critical/error/warn/info do not throw when active", "[Logger][positiv
 TEST_CASE("critical/error/warn/info/debug/trace do not throw when suppressed by level", "[Logger][negative]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::off));
+  const auto           lg = make_logger(console_cfg(level::off));
   CHECK_NOTHROW(lg->critical("suppressed"));
   CHECK_NOTHROW(lg->error("suppressed"));
   CHECK_NOTHROW(lg->warn("suppressed"));
@@ -259,7 +255,7 @@ TEST_CASE("critical/error/warn/info/debug/trace do not throw when suppressed by 
 TEST_CASE("format-string overloads do not throw for a non-empty argument list", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::trace));
+  const auto           lg = make_logger(console_cfg(level::trace));
   CHECK_NOTHROW(lg->info("value={} name={}", 42, "x"));
   CHECK_NOTHROW(lg->error("code={}", -1));
 }
@@ -271,7 +267,7 @@ TEST_CASE("format-string overloads do not throw for a non-empty argument list", 
 TEST_CASE("a message at or above file_level ends up in the log file", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  logger_config         cfg{.app_name = "test_app", .console_level = level::off, .file_level = level::info, .log_folder = "."};
+  logger_config        cfg{.app_name = "test_app", .console_level = level::off, .file_level = level::info, .log_folder = "."};
   {
     const auto lg = make_logger(cfg);
     lg->info("hello file sink");
@@ -310,11 +306,8 @@ TEST_CASE("the thread name reaches the file sink through the %* pattern flag", "
 {
   const temp_dir_guard tmp;
   Logger::make_log_name("worker-7");
-  logger_config cfg{.app_name      = "thread_name_app",
-                     .console_level = level::off,
-                     .file_level   = level::info,
-                     .pattern       = "[%*] %v",
-                     .log_folder   = "."};
+  logger_config cfg{
+    .app_name = "thread_name_app", .console_level = level::off, .file_level = level::info, .pattern = "[%*] %v", .log_folder = "."};
   {
     const auto lg = make_logger(cfg);
     lg->info("marker");
@@ -333,7 +326,7 @@ TEST_CASE("the thread name reaches the file sink through the %* pattern flag", "
 TEST_CASE("log_exception_with_chain does not throw for a plain exception", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::critical));
+  const auto           lg = make_logger(console_cfg(level::critical));
   try
   {
     throw std::runtime_error("boom");
@@ -347,8 +340,8 @@ TEST_CASE("log_exception_with_chain does not throw for a plain exception", "[Log
 TEST_CASE("log_exception_with_chain follows a nested_exception chain", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  logger_config         cfg{.app_name = "chain_app", .console_level = level::off, .file_level = level::critical, .log_folder = "."};
-  const auto            lg = make_logger(cfg);
+  logger_config        cfg{.app_name = "chain_app", .console_level = level::off, .file_level = level::critical, .log_folder = "."};
+  const auto           lg = make_logger(cfg);
   try
   {
     try
@@ -374,7 +367,7 @@ TEST_CASE("log_exception_with_chain follows a nested_exception chain", "[Logger]
 TEST_CASE("log_current_exception_with_chain does not throw when called from a catch block", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::critical));
+  const auto           lg = make_logger(console_cfg(level::critical));
   try
   {
     throw std::runtime_error("current");
@@ -390,7 +383,7 @@ TEST_CASE("log_current_exception_with_chain does nothing when there is no except
   // Covers std::current_exception() returning an empty exception_ptr - the
   // "called outside any catch block" case, distinct from the test above.
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::critical));
+  const auto           lg = make_logger(console_cfg(level::critical));
   CHECK_NOTHROW(lg->log_current_exception_with_chain());
 }
 
@@ -401,8 +394,9 @@ TEST_CASE("log_current_exception_with_chain does nothing when there is no except
 TEST_CASE("an async Logger does not throw on construction or on logging", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  logger_config         cfg{.app_name = "async_app", .run_mode = logger::mode::async, .console_level = level::off, .file_level = level::info, .log_folder = "."};
-  const auto            lg = make_logger(cfg);
+  logger_config        cfg{
+    .app_name = "async_app", .run_mode = logger::mode::async, .console_level = level::off, .file_level = level::info, .log_folder = "."};
+  const auto lg = make_logger(cfg);
   CHECK_NOTHROW(lg->info("async message"));
   CHECK_NOTHROW(lg->flush());
 }
@@ -457,7 +451,7 @@ TEST_CASE("load_logger_config accepts \"info\" as a level", "[load_logger_config
 
 TEST_CASE("load_logger_config falls back to the config_path argument when LOG_CONFIG is unset", "[load_logger_config][positive]")
 {
-  const env_guard      guard("LOG_CONFIG");
+  const env_guard guard("LOG_CONFIG");
   ::unsetenv("LOG_CONFIG"); // NOLINT(concurrency-mt-unsafe)
   const temp_dir_guard tmp;
   const auto           cfg_path = tmp.dir() / "fallback.json";
@@ -472,7 +466,7 @@ TEST_CASE("load_logger_config falls back to the config_path argument when LOG_CO
   // Covers load_logger_config()'s *env_path != '\0' check specifically -
   // distinct from "unset" (env_path == nullptr) above: here getenv()
   // succeeds and returns a non-null pointer to an empty string.
-  const env_guard      guard("LOG_CONFIG");
+  const env_guard guard("LOG_CONFIG");
   ::setenv("LOG_CONFIG", "", 1); // NOLINT(concurrency-mt-unsafe)
   const temp_dir_guard tmp;
   const auto           cfg_path = tmp.dir() / "fallback_empty_env.json";
@@ -484,7 +478,7 @@ TEST_CASE("load_logger_config falls back to the config_path argument when LOG_CO
 
 TEST_CASE("load_logger_config falls back to the hardcoded default when nothing is readable", "[load_logger_config][negative]")
 {
-  const env_guard      guard("LOG_CONFIG");
+  const env_guard guard("LOG_CONFIG");
   ::unsetenv("LOG_CONFIG"); // NOLINT(concurrency-mt-unsafe)
   const temp_dir_guard tmp;
 
@@ -543,7 +537,7 @@ TEST_CASE("load_logger_config falls back when a value has the wrong JSON type", 
 TEST_CASE("formatted trace/debug/warn/critical do not throw for a non-empty argument list", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::trace));
+  const auto           lg = make_logger(console_cfg(level::trace));
   CHECK_NOTHROW(lg->trace("trace value={}", 1));
   CHECK_NOTHROW(lg->debug("debug value={}", 2));
   CHECK_NOTHROW(lg->warn("warn value={}", 3));
@@ -557,7 +551,7 @@ TEST_CASE("trace/debug/info/warn/error/critical swallow an exception thrown whil
   // call - a log statement is never allowed to be the reason a caller's own
   // code fails.
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::trace));
+  const auto           lg = make_logger(console_cfg(level::trace));
   CHECK_NOTHROW(lg->trace("{}", throwing_arg{}));
   CHECK_NOTHROW(lg->debug("{}", throwing_arg{}));
   CHECK_NOTHROW(lg->info("{}", throwing_arg{}));
@@ -574,7 +568,7 @@ namespace
 {
   struct dummy_error
   {
-    std::string reason;
+    std::string               reason;
     [[nodiscard]] std::string to_string() const { return "dummy_error: " + reason; }
   };
 } // namespace
@@ -582,8 +576,8 @@ namespace
 TEST_CASE("error(E) logs to_string() of a caller-defined error type when active", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  logger_config         cfg{.app_name = "err_e_app", .console_level = level::off, .file_level = level::error, .log_folder = "."};
-  const auto            lg = make_logger(cfg);
+  logger_config        cfg{.app_name = "err_e_app", .console_level = level::off, .file_level = level::error, .log_folder = "."};
+  const auto           lg = make_logger(cfg);
   lg->error(dummy_error{.reason = "disk full"});
   lg->flush();
   std::ifstream     in(daily_log_path(tmp.dir(), "err_e_app"));
@@ -594,15 +588,15 @@ TEST_CASE("error(E) logs to_string() of a caller-defined error type when active"
 TEST_CASE("error(E) does not log when the level is suppressed", "[Logger][negative]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::off));
+  const auto           lg = make_logger(console_cfg(level::off));
   CHECK_NOTHROW(lg->error(dummy_error{.reason = "suppressed"}));
 }
 
 TEST_CASE("critical(E) logs to_string() of a caller-defined error type when active", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  logger_config         cfg{.app_name = "crit_e_app", .console_level = level::off, .file_level = level::critical, .log_folder = "."};
-  const auto            lg = make_logger(cfg);
+  logger_config        cfg{.app_name = "crit_e_app", .console_level = level::off, .file_level = level::critical, .log_folder = "."};
+  const auto           lg = make_logger(cfg);
   lg->critical(dummy_error{.reason = "out of memory"});
   lg->flush();
   std::ifstream     in(daily_log_path(tmp.dir(), "crit_e_app"));
@@ -613,7 +607,7 @@ TEST_CASE("critical(E) logs to_string() of a caller-defined error type when acti
 TEST_CASE("critical(E) does not log when the level is suppressed", "[Logger][negative]")
 {
   const temp_dir_guard tmp;
-  const auto            lg = make_logger(console_cfg(level::off));
+  const auto           lg = make_logger(console_cfg(level::off));
   CHECK_NOTHROW(lg->critical(dummy_error{.reason = "suppressed"}));
 }
 
@@ -624,8 +618,8 @@ TEST_CASE("critical(E) does not log when the level is suppressed", "[Logger][neg
 TEST_CASE("log_current_exception_with_chain logs a fallback message for a non-std::exception", "[Logger][negative]")
 {
   const temp_dir_guard tmp;
-  logger_config         cfg{.app_name = "nonstd_app", .console_level = level::off, .file_level = level::critical, .log_folder = "."};
-  const auto            lg = make_logger(cfg);
+  logger_config        cfg{.app_name = "nonstd_app", .console_level = level::off, .file_level = level::critical, .log_folder = "."};
+  const auto           lg = make_logger(cfg);
   try
   {
     throw 42; // NOLINT(hicpp-exception-baseclass) -- deliberately not a std::exception
@@ -643,8 +637,8 @@ TEST_CASE("log_current_exception_with_chain logs a fallback message for a non-st
 TEST_CASE("log_exception_with_chain logs a fallback line for a non-std::exception nested cause", "[Logger][negative]")
 {
   const temp_dir_guard tmp;
-  logger_config         cfg{.app_name = "nonstd_nested_app", .console_level = level::off, .file_level = level::critical, .log_folder = "."};
-  const auto            lg = make_logger(cfg);
+  logger_config        cfg{.app_name = "nonstd_nested_app", .console_level = level::off, .file_level = level::critical, .log_folder = "."};
+  const auto           lg = make_logger(cfg);
   try
   {
     try
@@ -676,8 +670,8 @@ TEST_CASE("log_exception_with_chain logs a fallback line for a non-std::exceptio
 
 TEST_CASE("Logger::create returns an error instead of throwing when log_folder cannot be created", "[Logger][negative]")
 {
-  const temp_dir_guard tmp;
-  const logger_config   cfg{.log_folder = "no/such/parent/logs"};
+  const temp_dir_guard                                tmp;
+  const logger_config                                 cfg{.log_folder = "no/such/parent/logs"};
   std::expected<std::unique_ptr<Logger>, std::string> result;
   CHECK_NOTHROW(result = Logger::create(cfg));
   REQUIRE_FALSE(result.has_value());
@@ -691,10 +685,23 @@ TEST_CASE("Logger::create succeeds when log_folder does not exist yet but can be
   // one where log_folder is missing but its parent exists, so mkdir()
   // actually runs and succeeds.
   const temp_dir_guard tmp;
-  const logger_config   cfg{.log_folder = "fresh_subdir"};
-  const auto            result = Logger::create(cfg);
+  const logger_config  cfg{.log_folder = "fresh_subdir"};
+  const auto           result = Logger::create(cfg);
   CHECK(result.has_value());
   CHECK(fs::exists(tmp.dir() / "fresh_subdir"));
+}
+
+// ============================================================================
+// Logger::create_or_exit() - create() plus make_log_name(), or print+exit(1)
+// ============================================================================
+
+TEST_CASE("Logger::create_or_exit succeeds for a valid config and sets the log name", "[Logger][positive]")
+{
+  const temp_dir_guard tmp;
+  const logger_config  cfg{.app_name = "create_or_exit_app", .log_folder = "."};
+  const auto           lg = Logger::create_or_exit(cfg);
+  REQUIRE(lg != nullptr);
+  CHECK(Logger::log_name() == cfg.app_name);
 }
 
 // ============================================================================
@@ -735,7 +742,7 @@ namespace
 TEST_CASE("setup_signal_handler logs and exits with 128+signal on SIGTERM", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const int             status = run_helper("sigterm", tmp.dir(), "sig_app");
+  const int            status = run_helper("sigterm", tmp.dir(), "sig_app");
   REQUIRE(WIFEXITED(status));
   CHECK(WEXITSTATUS(status) == 128 + SIGTERM);
 
@@ -751,7 +758,7 @@ TEST_CASE("a signal with no registered Logger target exits with 128+signal", "[L
   // installs the handler, then destroys its Logger (clearing
   // signal_target_) before raising the signal.
   const temp_dir_guard tmp;
-  const int             status = run_helper("sigterm_no_target", tmp.dir(), "sig_no_target_app");
+  const int            status = run_helper("sigterm_no_target", tmp.dir(), "sig_no_target_app");
   REQUIRE(WIFEXITED(status));
   CHECK(WEXITSTATUS(status) == 128 + SIGTERM);
 }
@@ -766,12 +773,14 @@ TEST_CASE("setup_signal_handler logs and exits with 128+signal, for every named 
     int         sig;
     const char* sig_name;
   };
-  const auto [scenario, sig, sig_name] =
-    GENERATE(case_t{"sigfpe", SIGFPE, "SIGFPE"}, case_t{"sigsegv", SIGSEGV, "SIGSEGV"}, case_t{"sigabrt", SIGABRT, "SIGABRT"}, case_t{"sigill", SIGILL, "SIGILL"});
+  const auto [scenario, sig, sig_name] = GENERATE(case_t{"sigfpe", SIGFPE, "SIGFPE"},
+                                                  case_t{"sigsegv", SIGSEGV, "SIGSEGV"},
+                                                  case_t{"sigabrt", SIGABRT, "SIGABRT"},
+                                                  case_t{"sigill", SIGILL, "SIGILL"});
   INFO("scenario=" << scenario);
 
   const temp_dir_guard tmp;
-  const int             status = run_helper(scenario, tmp.dir(), "sig_named_app");
+  const int            status = run_helper(scenario, tmp.dir(), "sig_named_app");
   REQUIRE(WIFEXITED(status));
   CHECK(WEXITSTATUS(status) == 128 + sig);
 
@@ -783,7 +792,7 @@ TEST_CASE("setup_signal_handler logs and exits with 128+signal, for every named 
 TEST_CASE("setup_terminate_handler logs an uncaught exception's chain and aborts", "[Logger][positive]")
 {
   const temp_dir_guard tmp;
-  const int             status = run_helper("terminate_with_exc", tmp.dir(), "term_app");
+  const int            status = run_helper("terminate_with_exc", tmp.dir(), "term_app");
   REQUIRE(WIFSIGNALED(status));
   CHECK(WTERMSIG(status) == SIGABRT);
 
@@ -796,7 +805,7 @@ TEST_CASE("setup_terminate_handler logs an uncaught exception's chain and aborts
 TEST_CASE("setup_terminate_handler logs a fixed message for an uncaught non-std::exception", "[Logger][negative]")
 {
   const temp_dir_guard tmp;
-  const int             status = run_helper("terminate_nonstd_exc", tmp.dir(), "term_nonstd_app");
+  const int            status = run_helper("terminate_nonstd_exc", tmp.dir(), "term_nonstd_app");
   REQUIRE(WIFSIGNALED(status));
   CHECK(WTERMSIG(status) == SIGABRT);
 
@@ -808,7 +817,7 @@ TEST_CASE("setup_terminate_handler logs a fixed message for an uncaught non-std:
 TEST_CASE("setup_terminate_handler logs a fixed message when terminate is reached without an exception", "[Logger][negative]")
 {
   const temp_dir_guard tmp;
-  const int             status = run_helper("terminate_no_exc", tmp.dir(), "term_noexc_app");
+  const int            status = run_helper("terminate_no_exc", tmp.dir(), "term_noexc_app");
   REQUIRE(WIFSIGNALED(status));
   CHECK(WTERMSIG(status) == SIGABRT);
 
@@ -823,7 +832,24 @@ TEST_CASE("a terminate with no registered Logger target aborts without logging",
   // helper installs the handler, then destroys its Logger (clearing
   // signal_target_) before std::terminate() fires.
   const temp_dir_guard tmp;
-  const int             status = run_helper("terminate_no_target", tmp.dir(), "term_no_target_app");
+  const int            status = run_helper("terminate_no_target", tmp.dir(), "term_no_target_app");
   REQUIRE(WIFSIGNALED(status));
   CHECK(WTERMSIG(status) == SIGABRT);
+}
+
+TEST_CASE("Logger::create_or_exit exits with 1 when the logger cannot be built", "[Logger][negative]")
+{
+  // Covers create_or_exit()'s own exit(1) path, which - like the signal/
+  // terminate handlers above - ends the process and so cannot run inside
+  // this Catch2 binary itself. "no/such/parent/logs" is the same unusable
+  // relative path "Logger::create returns an error instead of throwing when
+  // log_folder cannot be created" uses above: the child inherits this
+  // process's cwd (tmp.dir(), set by temp_dir_guard) via fork(), so the path
+  // resolves the same way there too. run_create_or_exit_fail() falls back to
+  // exit(3) if create_or_exit() ever returned instead of exiting - WEXITSTATUS
+  // == 1, not 3, is what proves the exit(1) path itself actually ran.
+  const temp_dir_guard tmp;
+  const int            status = run_helper("create_or_exit_fail", "no/such/parent/logs", "create_or_exit_fail_app");
+  REQUIRE(WIFEXITED(status));
+  CHECK(WEXITSTATUS(status) == 1);
 }
