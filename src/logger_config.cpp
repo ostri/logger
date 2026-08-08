@@ -29,6 +29,35 @@ namespace
     return logger::level::off;
   }
 
+  /// @brief logger_config::app_name etc., overridden field-by-field from `j` - shared by
+  /// logger::parse_logger_config() (already-parsed json text) and parse_config_file() below
+  /// (a whole file) so the field list lives in exactly one place
+  std::optional<logger::logger_config> parse_config_json(const nlohmann::json& j, const logger::logger_config& defaults)
+  {
+    logger::logger_config cfg = defaults;
+    try
+    {
+      cfg.app_name        = j.value("app_name", cfg.app_name);
+      cfg.run_mode        = (j.value("mode", "sync") == "async") ? logger::mode::async : logger::mode::sync;
+      cfg.console_level   = level_from_string(j.value("console_level", "warn"));
+      cfg.file_level      = level_from_string(j.value("file_level", "trace"));
+      cfg.rotation_hour   = j.value("rotation_hour", cfg.rotation_hour);
+      cfg.rotation_minute = j.value("rotation_minute", cfg.rotation_minute);
+      cfg.keep_days       = j.value("keep_days", cfg.keep_days);
+      cfg.pattern         = j.value("pattern", cfg.pattern);
+      cfg.log_folder      = j.value("log_folder", cfg.log_folder);
+      cfg.flush_on        = level_from_string(j.value("flush_on", "warn"));
+    }
+    // Same gcov branch-attribution quirk as parse_config_file()'s own catch
+    // below - this one is exercised too (see "load_logger_config falls back
+    // when a value has the wrong JSON type").
+    catch (const std::exception&) // GCOVR_EXCL_BR_LINE
+    {
+      return std::nullopt;
+    }
+    return cfg;
+  }
+
   std::optional<logger::logger_config> parse_config_file(const std::string& path)
   {
     std::ifstream file(path);
@@ -49,28 +78,7 @@ namespace
       return std::nullopt;
     }
 
-    logger::logger_config cfg;
-    try
-    {
-      cfg.app_name        = j.value("app_name", cfg.app_name);
-      cfg.run_mode         = (j.value("mode", "sync") == "async") ? logger::mode::async : logger::mode::sync;
-      cfg.console_level   = level_from_string(j.value("console_level", "warn"));
-      cfg.file_level       = level_from_string(j.value("file_level", "trace"));
-      cfg.rotation_hour   = j.value("rotation_hour", cfg.rotation_hour);
-      cfg.rotation_minute = j.value("rotation_minute", cfg.rotation_minute);
-      cfg.keep_days        = j.value("keep_days", cfg.keep_days);
-      cfg.pattern           = j.value("pattern", cfg.pattern);
-      cfg.log_folder       = j.value("log_folder", cfg.log_folder);
-      cfg.flush_on          = level_from_string(j.value("flush_on", "warn"));
-    }
-    // Same gcov branch-attribution quirk as the catch above - this one is
-    // exercised too (see "load_logger_config falls back when a value has
-    // the wrong JSON type").
-    catch (const std::exception&) // GCOVR_EXCL_BR_LINE
-    {
-      return std::nullopt;
-    }
-    return cfg;
+    return parse_config_json(j, {});
   }
 } // namespace
 
@@ -87,6 +95,24 @@ namespace logger
 
     if (auto cfg = parse_config_file(std::string(config_path))) return *cfg;
 
-    return logger_config{.console_level = level::warn, .file_level = level::warn}; // GCOVR_EXCL_BR_LINE -- std::string field allocation's own bad_alloc branch, not exercised on purpose
+    return logger_config{
+      .console_level = level::warn,
+      .file_level    = level::warn}; // GCOVR_EXCL_BR_LINE -- std::string field allocation's own bad_alloc branch, not exercised on purpose
+  }
+
+  logger_config parse_logger_config(std::string_view json_text, const logger_config& defaults)
+  {
+    nlohmann::json j;
+    try
+    {
+      j = nlohmann::json::parse(json_text);
+    }
+    catch (const std::exception&) // GCOVR_EXCL_BR_LINE -- same gcov branch-attribution quirk as parse_config_file()'s own catch
+    {
+      return defaults;
+    }
+
+    if (auto cfg = parse_config_json(j, defaults)) return *cfg;
+    return defaults;
   }
 } // namespace logger

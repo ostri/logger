@@ -14,8 +14,8 @@
 namespace logger
 {
   const int             logger_keep_days_default = 7; ///< how long rotated log files are kept by default
-  constexpr const char* def_logger_cfg_path       = "config/log.debug.json";
-  constexpr const char* def_logger_path           = "logs/fallback.log";
+  constexpr const char* def_logger_cfg_path      = "config/log.debug.json";
+  constexpr const char* def_logger_path          = "logs/fallback.log";
 
   /// @brief mnemonic level names, higher value == more severe
   enum class level : std::uint8_t
@@ -65,4 +65,26 @@ namespace logger
    * startup, just a reason to fall back.
    */
   [[nodiscard]] logger_config load_logger_config(std::string_view config_path = def_logger_cfg_path);
+
+  /**
+   * @brief parses a logger_config from an already-in-hand JSON text, e.g. a
+   * section pulled out of a larger config file
+   *
+   * Same field mapping load_logger_config()'s own file-based path uses
+   * internally (app_name/mode/console_level/file_level/rotation_hour/
+   * rotation_minute/keep_days/pattern/log_folder/flush_on) - exposed as raw
+   * JSON text rather than a parsed object so this header never needs to name
+   * nlohmann::json itself: logger keeps that dependency PRIVATE (only the
+   * .cpp/Pimpl side knows about it - see CMakeLists.txt's own comment on
+   * this), and a caller with a parsed nlohmann::json object already in hand
+   * (e.g. ach.conf's "log" section) just passes `section.dump()`.
+   *
+   * @param json_text a JSON object, as text - malformed text or a value that
+   *        isn't an object falls back to `defaults` entirely, same as
+   *        load_logger_config() falls back to a hardcoded logger_config when
+   *        no config file could be read at all
+   * @param defaults starting point for any field json_text does not mention -
+   *        every field is optional, same as in a JSON config file
+   */
+  [[nodiscard]] logger_config parse_logger_config(std::string_view json_text, const logger_config& defaults = {});
 } // namespace logger
