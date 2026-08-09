@@ -49,7 +49,7 @@ namespace logger
     int         rotation_hour   = 2;
     int         rotation_minute = 0;
     int         keep_days       = logger_keep_days_default;
-    std::string pattern         = "[%Y-%m-%d %H:%M:%S.%e] [%n] [%l] [%*] %v";
+    std::string pattern         = "[%Y-%m-%d %H:%M:%S.%e] [%n] [%L] [%*] %v";
     std::string log_folder      = "./logs";
     level       flush_on        = level::warn;
   };

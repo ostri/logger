@@ -22,6 +22,22 @@ namespace logger
     [[nodiscard]] std::unique_ptr<custom_flag_formatter> clone() const override;
   };
 
+  /**
+   * @brief custom spdlog format flag: prints the record's level, fixed-width
+   * (5 characters, left-padded with spaces), so every level lines up in one
+   * column. spdlog's own "%l" varies in width (info=4, warning=7,
+   * critical=8, ...) and cannot be shortened via a pattern spec alone;
+   * "critical" (spdlog's only name over 5 characters) is abbreviated to
+   * "crit" here rather than left to overflow the column. Register it as
+   * '%L' in a pattern string.
+   */
+  class level_name_formatter : public spdlog::custom_flag_formatter
+  {
+  public:
+    void format(const spdlog::details::log_msg& msg, const std::tm& /*tm*/, spdlog::memory_buf_t& dest) override;
+    [[nodiscard]] std::unique_ptr<custom_flag_formatter> clone() const override;
+  };
+
   class Logger::impl
   {
   public:

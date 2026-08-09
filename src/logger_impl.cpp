@@ -3,10 +3,12 @@
 #include <spdlog/logger.h>
 #include <spdlog/spdlog.h>
 #include <sys/stat.h>
+#include <array>
 #include <filesystem>
 #include <iostream>
 #include <sstream>
 #include <stacktrace>
+#include <string_view>
 #include <unordered_map>
 
 namespace fs = std::filesystem;
@@ -20,9 +22,36 @@ namespace logger
   }
 
   [[nodiscard]] std::unique_ptr<spdlog::custom_flag_formatter> thread_name_formatter::clone() const
+  { return std::make_unique<thread_name_formatter>(); }
+
+  namespace
   {
-    return std::make_unique<thread_name_formatter>();
+    // Fixed 5-character level names, space-padded - spdlog's own names ("info"=4,
+    // "warning"=7, "critical"=8, ...) do not line up in a column; "critical" is
+    // abbreviated to "crit" (not truncated to "criti") so it stays recognisable.
+    constexpr std::array<std::string_view, 7> level_names_5{
+      "trace",
+      "debug",
+      "info ",
+      "warn ",
+      "error",
+      "crit ",
+      "off  ",
+    };
+  } // namespace
+
+  void level_name_formatter::format(const spdlog::details::log_msg& msg, const std::tm& /*tm*/, spdlog::memory_buf_t& dest)
+  {
+    const auto             idx  = static_cast<std::size_t>(msg.level);
+    const std::string_view name = idx < level_names_5.size()
+                                    ? level_names_5.at(idx)
+                                    : std::string_view("?????"); // GCOVR_EXCL_BR_LINE - spdlog never hands out a level outside its own enum
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    dest.append(name.data(), name.data() + name.size());
   }
+
+  [[nodiscard]] std::unique_ptr<spdlog::custom_flag_formatter> level_name_formatter::clone() const
+  { return std::make_unique<level_name_formatter>(); }
 
   // The null-checks below (console_sink_/file_sink_/logger_) never take
   // their false branch in practice: build() always sets all three before
@@ -124,6 +153,7 @@ namespace logger
   {
     std::unordered_map<char, std::unique_ptr<spdlog::custom_flag_formatter>> flags;
     flags['*'] = std::make_unique<thread_name_formatter>();
+    flags['L'] = std::make_unique<level_name_formatter>();
     return std::make_unique<spdlog::pattern_formatter>(
       std::string(pattern), spdlog::pattern_time_type::local, spdlog::details::os::default_eol, std::move(flags));
   }
@@ -136,7 +166,8 @@ namespace logger
     // std::runtime_error (mkdir failure) and spdlog::spdlog_ex (sink
     // construction failure, e.g. an unwritable log file) - spdlog_ex derives
     // from std::exception, so there is no need to name it separately here.
-    auto p = std::unique_ptr<impl>(new impl()); // GCOVR_EXCL_BR_LINE -- unique_ptr's own null-check branch, not something a caller-visible path can steer
+    auto p = std::unique_ptr<impl>(
+      new impl()); // GCOVR_EXCL_BR_LINE -- unique_ptr's own null-check branch, not something a caller-visible path can steer
     try
     {
       p->build(cfg);
@@ -170,11 +201,13 @@ namespace logger
     set_console_level(cfg.console_level);
 
     auto log_filename = fmt::format("{}/{}.log", log_folder_abs, cfg.app_name);
-    file_sink_         = std::make_shared<spdlog::sinks::daily_file_sink_mt>(log_filename, cfg.rotation_hour, cfg.rotation_minute, true, cfg.keep_days);
+    file_sink_ =
+      std::make_shared<spdlog::sinks::daily_file_sink_mt>(log_filename, cfg.rotation_hour, cfg.rotation_minute, true, cfg.keep_days);
     file_sink_->set_formatter(make_formatter(cfg.pattern));
     set_file_level(cfg.file_level);
 
-    std::vector<spdlog::sink_ptr> sinks{console_sink_, file_sink_}; // GCOVR_EXCL_BR_LINE -- std::vector's own bad_alloc branch, not exercised on purpose
+    std::vector<spdlog::sink_ptr> sinks{console_sink_,
+                                        file_sink_}; // GCOVR_EXCL_BR_LINE -- std::vector's own bad_alloc branch, not exercised on purpose
 
     if (cfg.run_mode == mode::async)
     {
