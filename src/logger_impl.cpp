@@ -200,9 +200,16 @@ namespace logger
     console_sink_->set_formatter(make_formatter(cfg.pattern));
     set_console_level(cfg.console_level);
 
+    // truncate=false (spdlog's own default too, spelled out here rather than
+    // left implicit): a caller building more than one Logger against the
+    // same app_name/log_folder on the same day - e.g. a short-lived
+    // bootstrap Logger followed by the real one, once its own config has
+    // been read (see ach's tool.cpp for a worked example) - appends to
+    // today's file instead of truncating away whatever the previous Logger
+    // already wrote to it.
     auto log_filename = fmt::format("{}/{}.log", log_folder_abs, cfg.app_name);
     file_sink_ =
-      std::make_shared<spdlog::sinks::daily_file_sink_mt>(log_filename, cfg.rotation_hour, cfg.rotation_minute, true, cfg.keep_days);
+      std::make_shared<spdlog::sinks::daily_file_sink_mt>(log_filename, cfg.rotation_hour, cfg.rotation_minute, false, cfg.keep_days);
     file_sink_->set_formatter(make_formatter(cfg.pattern));
     set_file_level(cfg.file_level);
 
