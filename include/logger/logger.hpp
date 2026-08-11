@@ -206,21 +206,6 @@ namespace logger
     static Logger* signal_target_; // NOLINT(cppcoreguidelines-avoid-non-const-global-variables)
   };
 
-  // The six formatted overloads below are templates on Args... - each
-  // distinct argument-type combination a caller instantiates them with is
-  // its own separate function as far as the compiler (and gcov) are
-  // concerned. test_logger.cpp's own tests exercise both branches of every
-  // `if (!active(...)) return;` and both outcomes of every `catch (...)`
-  // for the specific instantiations it uses (int, throwing_arg, ...) - but
-  // other translation units linked into the same coverage run (this
-  // library's own log_backtrace(), which calls critical() with a
-  // std::string argument) instantiate these same templates again with
-  // *their* argument types, and gcov reports branch coverage per
-  // instantiation, not merged across them. Getting every instantiation
-  // anywhere in the program to hit both branches isn't practical, so branch
-  // coverage is excluded here; line/function coverage (which report "was
-  // this template instantiated and run at all", not "every branch of every
-  // instantiation") are not.
   // GCOVR_EXCL_BR_START
   template <typename... Args>
   inline void Logger::trace([[maybe_unused]] fmt::format_string<Args...> fmt, [[maybe_unused]] Args&&... args) const noexcept
@@ -329,19 +314,7 @@ namespace logger
   {
     if (active(level::error)) _log(level::error, sv);
   }
-  // critical(string_view)'s active()==false branch and make_log_name()'s
-  // child.empty()==false branch are both fully exercised - but only in
-  // test_logger.cpp's own translation unit (see "critical/error/warn/info/
-  // debug/trace do not throw when suppressed by level" and "make_log_name
-  // (parent, child) joins parent and non-empty child with a slash"). Being
-  // `inline`, each translation unit that calls these gets its own copy;
-  // logger.cpp's copy of critical(string_view) is only ever reached with
-  // level::critical already active (log_backtrace()/signal_handler()/the
-  // terminate handler all call it on a path that's already decided to
-  // log), and logger.cpp never calls make_log_name() at all. gcovr reports
-  // branch coverage per source line across every translation unit's copy,
-  // not the best one, so the line shows as partially covered overall
-  // despite being fully covered where it's actually under test.
+
   inline void Logger::critical(std::string_view sv) const
   {
     if (active(level::critical)) _log(level::critical, sv); // GCOVR_EXCL_BR_LINE
