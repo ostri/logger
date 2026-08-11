@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(logger VERSION 0.1.9 DESCRIPTION "thin facade over spdlog" LANGUAGES CXX)
+project(logger VERSION 0.1.10 DESCRIPTION "thin facade over spdlog" LANGUAGES CXX)
 
 # Meant to be consumed via add_subdirectory()/CPMAddPackage() by another
 # project's own CMakeLists.txt as much as built standalone - tests and
