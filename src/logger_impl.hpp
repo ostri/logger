@@ -12,15 +12,46 @@
 namespace logger
 {
   /**
-   * @brief custom spdlog format flag: prints log_thread_name of the thread
-   * that produced the record. Register it as '%*' in a pattern string.
+   * @brief custom spdlog format flag: prints the logical thread name that
+   * produced the record. Register it as '%*' in a pattern string.
+   *
+   * Reads it from msg.payload, not from the thread_local log_thread_name
+   * (see logger.hpp) directly: with an async Logger, the pattern_formatter
+   * that calls this runs on spdlog's own backing thread, not the thread that
+   * called Logger::info()/etc., so log_thread_name there is whatever that
+   * backing thread's own (never set) copy holds - always "unknown". _log()
+   * (see logger_impl.cpp) works around this by capturing log_thread_name on
+   * the calling thread and prepending it to the payload, separated by
+   * kThreadNamePayloadSep; this formatter (and message_body_formatter below,
+   * which strips it back off for '%v') is the other half of that scheme.
    */
   class thread_name_formatter : public spdlog::custom_flag_formatter
   {
   public:
-    void format(const spdlog::details::log_msg& /*msg*/, const std::tm& /*tm*/, spdlog::memory_buf_t& dest) override;
+    void format(const spdlog::details::log_msg& msg, const std::tm& /*tm*/, spdlog::memory_buf_t& dest) override;
     [[nodiscard]] std::unique_ptr<custom_flag_formatter> clone() const override;
   };
+
+  /**
+   * @brief custom spdlog format flag: prints the record's actual message
+   * text, with the thread_name_formatter's own prefix (see its comment
+   * above) stripped back off. Register it as '%v' in a pattern string,
+   * overriding spdlog's own built-in "%v" handler (pattern_formatter checks
+   * custom flags before built-in ones - see handle_flag_()).
+   */
+  class message_body_formatter : public spdlog::custom_flag_formatter
+  {
+  public:
+    void format(const spdlog::details::log_msg& msg, const std::tm& /*tm*/, spdlog::memory_buf_t& dest) override;
+    [[nodiscard]] std::unique_ptr<custom_flag_formatter> clone() const override;
+  };
+
+  /// @brief separates the thread name prefix _log() adds to a message's
+  /// payload from the actual message text - see thread_name_formatter's own
+  /// comment above. Unit Separator (0x1F): not something a thread name
+  /// (make_log_name() arguments) or a formatted log message is ever
+  /// expected to contain, unlike '[', ']', or ' '.
+  inline constexpr char kThreadNamePayloadSep = '\x1f';
 
   /**
    * @brief custom spdlog format flag: prints the record's level, fixed-width

@@ -426,6 +426,32 @@ TEST_CASE("an async Logger does not throw on construction or on logging", "[Logg
   CHECK_NOTHROW(lg->flush());
 }
 
+TEST_CASE("the thread name reaches the file sink through %* on an async Logger too", "[Logger][positive]")
+{
+  // %* is read on spdlog's own backing thread for an async Logger, not the
+  // thread that called make_log_name()/info() - this is the case
+  // thread_name_formatter's own payload-splitting scheme (see
+  // logger_impl.hpp) exists to cover; the sync case above already covers
+  // the simpler path.
+  const temp_dir_guard tmp;
+  Logger::make_log_name("async-worker-3");
+  logger_config cfg{.app_name      = "async_thread_name_app",
+                    .run_mode      = logger::mode::async,
+                    .console_level = level::off,
+                    .file_level    = level::info,
+                    .pattern       = "[%*] %v",
+                    .log_folder    = "."};
+  {
+    const auto lg = make_logger(cfg);
+    lg->info("async marker");
+    lg->flush();
+  }
+  std::ifstream     in(daily_log_path(tmp.dir(), "async_thread_name_app"));
+  const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content.contains("[async-worker-3]"));
+  CHECK(content.contains("async marker"));
+}
+
 // ============================================================================
 // load_logger_config
 // ============================================================================

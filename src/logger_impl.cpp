@@ -15,14 +15,50 @@ namespace fs = std::filesystem;
 
 namespace logger
 {
-  void thread_name_formatter::format(const spdlog::details::log_msg& /*msg*/, const std::tm& /*tm*/, spdlog::memory_buf_t& dest)
+  namespace
   {
+    // Splits msg.payload into the thread name _log() prepended and the
+    // actual message text, at the first kThreadNamePayloadSep - see
+    // thread_name_formatter's own comment in logger_impl.hpp. A payload with
+    // no separator (nothing today produces one - see _log() below - but
+    // never say never) is treated as having no thread name prefix at all,
+    // same as before this scheme existed: log_thread_name's own built-in
+    // default ("unknown") for the name half, the whole payload for the
+    // message half.
+    struct split_payload
+    {
+      std::string_view thread_name;
+      std::string_view message;
+    };
+
+    [[nodiscard]] split_payload split_thread_name(spdlog::string_view_t payload)
+    {
+      const std::string_view sv(payload.data(), payload.size());
+      const auto             sep = sv.find(kThreadNamePayloadSep);
+      if (sep == std::string_view::npos) return {.thread_name = log_thread_name, .message = sv};
+      return {.thread_name = sv.substr(0, sep), .message = sv.substr(sep + 1)};
+    }
+  } // namespace
+
+  void thread_name_formatter::format(const spdlog::details::log_msg& msg, const std::tm& /*tm*/, spdlog::memory_buf_t& dest)
+  {
+    const auto name = split_thread_name(msg.payload).thread_name;
     // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
-    dest.append(log_thread_name.data(), log_thread_name.data() + log_thread_name.size());
+    dest.append(name.data(), name.data() + name.size());
   }
 
   [[nodiscard]] std::unique_ptr<spdlog::custom_flag_formatter> thread_name_formatter::clone() const
   { return std::make_unique<thread_name_formatter>(); }
+
+  void message_body_formatter::format(const spdlog::details::log_msg& msg, const std::tm& /*tm*/, spdlog::memory_buf_t& dest)
+  {
+    const auto text = split_thread_name(msg.payload).message;
+    // NOLINTNEXTLINE(cppcoreguidelines-pro-bounds-pointer-arithmetic)
+    dest.append(text.data(), text.data() + text.size());
+  }
+
+  [[nodiscard]] std::unique_ptr<spdlog::custom_flag_formatter> message_body_formatter::clone() const
+  { return std::make_unique<message_body_formatter>(); }
 
   namespace
   {
@@ -89,7 +125,18 @@ namespace logger
     if (logger_) logger_->flush_on(static_cast<spdlog::level::level_enum>(l)); // GCOVR_EXCL_BR_LINE
   }
 
-  void Logger::impl::_log(enum level l, std::string_view s) const { logger_->log(static_cast<spdlog::level::level_enum>(l), s); }
+  void Logger::impl::_log(enum level l, std::string_view s) const
+  {
+    // Captures log_thread_name on this thread - the only one guaranteed to
+    // have the value make_log_name() actually set on it - and carries it
+    // along inside the payload itself, rather than leaving %* to read
+    // log_thread_name at format time. An async Logger's pattern_formatter
+    // runs on spdlog's own backing thread, where log_thread_name was never
+    // set; a sync Logger formats on this same thread, so this changes
+    // nothing observable there. See thread_name_formatter's own comment in
+    // logger_impl.hpp for the other half of this scheme.
+    logger_->log(static_cast<spdlog::level::level_enum>(l), fmt::format("{}{}{}", log_thread_name, kThreadNamePayloadSep, s));
+  }
 
   void Logger::impl::log_exception_with_chain(const std::exception& e, enum level lvl) const
   {
@@ -154,6 +201,7 @@ namespace logger
     std::unordered_map<char, std::unique_ptr<spdlog::custom_flag_formatter>> flags;
     flags['*'] = std::make_unique<thread_name_formatter>();
     flags['L'] = std::make_unique<level_name_formatter>();
+    flags['v'] = std::make_unique<message_body_formatter>();
     return std::make_unique<spdlog::pattern_formatter>(
       std::string(pattern), spdlog::pattern_time_type::local, spdlog::details::os::default_eol, std::move(flags));
   }
