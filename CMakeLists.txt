@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.25)
-project(logger VERSION 0.1.0 DESCRIPTION "thin facade over spdlog" LANGUAGES CXX)
+project(logger VERSION 0.1.8 DESCRIPTION "thin facade over spdlog" LANGUAGES CXX)
 
 # Meant to be consumed via add_subdirectory()/CPMAddPackage() by another
 # project's own CMakeLists.txt as much as built standalone - tests and
@@ -196,8 +196,8 @@ if(RUN_CLANG_TIDY_EXECUTABLE AND PROJECT_IS_TOP_LEVEL)
             -p ${CMAKE_CURRENT_BINARY_DIR}
             -config-file=${CMAKE_CURRENT_SOURCE_DIR}/.clang-tidy
             -quiet
-            -header-filter "^${CMAKE_CURRENT_SOURCE_DIR}/(include|src|demo)/.*\\.hpp$"
-            -source-filter "^${CMAKE_CURRENT_SOURCE_DIR}/(src|demo)/.*\\.cpp$"
+            -header-filter "^${CMAKE_CURRENT_SOURCE_DIR}/(include|src)/.*\\.hpp$"
+            -source-filter "^${CMAKE_CURRENT_SOURCE_DIR}/src/.*\\.cpp$"
         WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
         COMMENT "Running clang-tidy (parallel)"
         VERBATIM
@@ -205,13 +205,40 @@ if(RUN_CLANG_TIDY_EXECUTABLE AND PROJECT_IS_TOP_LEVEL)
 endif()
 
 # ===================================================================
-# config files - copied next to whichever binaries read them by default
-# (demo/tests both default to a relative "config/log.debug.json" path).
+# bump_git_tag - maintainer-only release helper, not a build step: bumps
+# this project's own PATCH version by 1 (source of truth is this file's own
+# `project(logger VERSION ...)` above), rewrites it here and in README.md's
+# matching GIT_TAG example, commits, tags, and pushes both to origin - see
+# scripts/bump_git_tag.sh for the actual logic (refuses to run on a dirty
+# working tree). PROJECT_IS_TOP_LEVEL guarded like tidy above: a consumer
+# pulling this in via add_subdirectory() has no business tagging/pushing
+# this repository's own releases from its build.
 # ===================================================================
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config/log.debug.json
-               ${CMAKE_CURRENT_BINARY_DIR}/config/log.debug.json COPYONLY)
-configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config/log.release.json
-               ${CMAKE_CURRENT_BINARY_DIR}/config/log.release.json COPYONLY)
+if(PROJECT_IS_TOP_LEVEL)
+    add_custom_target(bump_git_tag
+        COMMAND ${CMAKE_CURRENT_SOURCE_DIR}/scripts/bump_git_tag.sh
+        WORKING_DIRECTORY ${CMAKE_CURRENT_SOURCE_DIR}
+        COMMENT "Bumping version, committing, tagging, and pushing to origin"
+        VERBATIM
+        USES_TERMINAL
+    )
+endif()
+
+# ===================================================================
+# config file - config/log.<build type>.conf is copied into this build
+# directory as "logger.conf", matching load_logger_config()'s own default
+# search (LOG_CONFIG, then "logger.conf" in the current working directory -
+# see logger_config.hpp). Which source file is picked follows
+# CMAKE_BUILD_TYPE, so build/debug ends up with log.debug.conf's content,
+# build/release with log.release.conf's, and so on - a binary run from its
+# own build directory picks up the right config with no LOG_CONFIG needed.
+# ===================================================================
+string(TOLOWER "${CMAKE_BUILD_TYPE}" LOGGER_BUILD_TYPE_LOWER)
+set(LOGGER_CONF_SOURCE ${CMAKE_CURRENT_SOURCE_DIR}/config/log.${LOGGER_BUILD_TYPE_LOWER}.conf)
+if(NOT EXISTS ${LOGGER_CONF_SOURCE})
+    message(FATAL_ERROR "No config/log.${LOGGER_BUILD_TYPE_LOWER}.conf for CMAKE_BUILD_TYPE=${CMAKE_BUILD_TYPE}")
+endif()
+configure_file(${LOGGER_CONF_SOURCE} ${CMAKE_CURRENT_BINARY_DIR}/logger.conf COPYONLY)
 
 # ===================================================================
 # demo program - a small, runnable illustration of Logger's main
@@ -220,7 +247,7 @@ configure_file(${CMAKE_CURRENT_SOURCE_DIR}/config/log.release.json
 # reasoning as BUILD_TESTING/ENABLE_SANITIZERS above.
 # ===================================================================
 if(PROJECT_IS_TOP_LEVEL)
-    add_executable(logger_demo demo/demo.cpp demo/error_info.cpp)
+    add_executable(logger_demo src/demo/demo.cpp src/demo/error_info.cpp)
     target_link_libraries(logger_demo PRIVATE logger::logger fmt::fmt logger_warnings)
 
     if(CMAKE_BUILD_TYPE STREQUAL "Debug" AND ENABLE_SANITIZERS)
@@ -302,9 +329,10 @@ if(BUILD_TESTING AND PROJECT_IS_TOP_LEVEL)
     # ===================================================================
     # coverage - runs logger_test (discarding its own pass/fail: the point
     # here is the .gcda files it leaves behind, not a second test report),
-    # then renders an HTML report with gcovr. demo/ and test/ are excluded
-    # from the report - coverage is a question about the library
-    # (src/, include/), not about the demo program or the test code itself.
+    # then renders an HTML report with gcovr. src/demo/ and test/ are
+    # excluded from the report - coverage is a question about the library
+    # itself (src/, include/, minus src/demo/), not about the demo program
+    # or the test code measuring it.
     #
     # PROJECT_IS_TOP_LEVEL guarded like the tidy target above: BUILD_TESTING
     # is a cache variable, so a consumer that turns it ON for its own test
@@ -322,6 +350,7 @@ if(BUILD_TESTING AND PROJECT_IS_TOP_LEVEL)
                 --root ${CMAKE_CURRENT_SOURCE_DIR}
                 --filter ${CMAKE_CURRENT_SOURCE_DIR}/src
                 --filter ${CMAKE_CURRENT_SOURCE_DIR}/include
+                --exclude ${CMAKE_CURRENT_SOURCE_DIR}/src/demo
                 --exclude-unreachable-branches
                 --exclude-throw-branches
                 --html --html-details

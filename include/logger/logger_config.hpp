@@ -13,8 +13,8 @@
 
 namespace logger
 {
-  const int             logger_keep_days_default = 7; ///< how long rotated log files are kept by default
-  constexpr const char* def_logger_cfg_path      = "config/log.debug.json";
+  const int             logger_keep_days_default = 7;             ///< how long rotated log files are kept by default
+  constexpr const char* def_logger_cfg_path      = "logger.conf"; ///< relative to the process' working directory
   constexpr const char* def_logger_path          = "logs/fallback.log";
 
   /// @brief mnemonic level names, higher value == more severe
@@ -57,12 +57,20 @@ namespace logger
   /**
    * @brief loads a logger_config, trying in order:
    * 1. LOG_CONFIG environment variable -> path to a JSON config file, if set and non-empty.
-   * 2. `config_path` (defaults to def_logger_cfg_path), if LOG_CONFIG was unset, empty, or
-   *    pointed at a file that couldn't be read/parsed.
+   * 2. `config_path` (defaults to def_logger_cfg_path, i.e. "logger.conf" in the process'
+   *    working directory), if LOG_CONFIG was unset, empty, or pointed at a file that
+   *    couldn't be read/parsed.
    * 3. a hardcoded fallback if neither file could be read: console only, level warn.
    *
    * Never throws - a missing or broken config file is not a reason to fail
-   * startup, just a reason to fall back.
+   * startup, just a reason to fall back. Falling back to step 3 prints an
+   * explanation to stderr (that neither LOG_CONFIG nor config_path could be
+   * used, and that logging is falling back to the console) followed by a
+   * ready-to-paste JSON rendering of the logger_config actually in effect -
+   * a caller reading stderr on first run has, right there, a starting point
+   * for its own config file. A file that exists but fails to parse as JSON
+   * gets its parser error (message, byte offset) printed to stderr too,
+   * whether it came from LOG_CONFIG or config_path.
    */
   [[nodiscard]] logger_config load_logger_config(std::string_view config_path = def_logger_cfg_path);
 

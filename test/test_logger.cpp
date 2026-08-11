@@ -11,9 +11,11 @@
 #include <filesystem>
 #include <fstream>
 #include <ios>
+#include <iostream>
 #include <iterator>
 #include <memory>
 #include <optional>
+#include <sstream>
 #include <stdexcept>
 #include <string>
 #include <string_view>
@@ -109,6 +111,29 @@ namespace
     std::ofstream out(p, std::ios::binary);
     out << content;
   }
+
+  /// RAII helper that redirects std::cerr into an in-memory buffer for the
+  /// duration of the test - load_logger_config()'s fallback/parse-error
+  /// messages go to stderr rather than through a Logger (see its own header
+  /// comment for why: no Logger exists yet at that point), so this is how
+  /// tests observe them.
+  class cerr_capture
+  {
+  public:
+    cerr_capture()
+    : old_buf_(std::cerr.rdbuf(buf_.rdbuf()))
+    {
+    }
+    ~cerr_capture() { std::cerr.rdbuf(old_buf_); }
+    cerr_capture(const cerr_capture&)                   = delete;
+    cerr_capture& operator=(const cerr_capture&)        = delete;
+    cerr_capture(cerr_capture&&)                        = delete;
+    cerr_capture&             operator=(cerr_capture&&) = delete;
+    [[nodiscard]] std::string str() const { return buf_.str(); }
+  private:
+    std::ostringstream buf_;
+    std::streambuf*    old_buf_;
+  };
 
   logger_config console_cfg(level lvl = level::info) { return logger_config{.console_level = lvl, .file_level = lvl, .log_folder = "."}; }
 
@@ -511,6 +536,55 @@ TEST_CASE("load_logger_config falls back when LOG_CONFIG points at malformed JSO
   CHECK(cfg.console_level == level::warn);
 }
 
+TEST_CASE("load_logger_config prints the JSON parser's own error for malformed LOG_CONFIG JSON", "[load_logger_config][negative]")
+{
+  const env_guard      guard("LOG_CONFIG");
+  const temp_dir_guard tmp;
+  const auto           cfg_path = tmp.dir() / "broken.json";
+  write_file(cfg_path, "{ this is not valid json");
+  ::setenv("LOG_CONFIG", cfg_path.string().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+
+  const cerr_capture cap;
+  (void)logger::load_logger_config("does/not/exist.json");
+  const std::string out = cap.str();
+  CHECK(out.find(cfg_path.string()) != std::string::npos);
+  CHECK(out.find("valid JSON") != std::string::npos);
+  // nlohmann::json's own exception message names the line/column it failed at.
+  CHECK(out.find("line") != std::string::npos);
+  CHECK(out.find("column") != std::string::npos);
+}
+
+TEST_CASE("load_logger_config falls back to logger.conf in the current working directory by default", "[load_logger_config][positive]")
+{
+  const env_guard guard("LOG_CONFIG");
+  ::unsetenv("LOG_CONFIG"); // NOLINT(concurrency-mt-unsafe)
+  const temp_dir_guard tmp;
+  write_file(tmp.dir() / "logger.conf", R"({"console_level":"critical"})");
+
+  const auto cfg = logger::load_logger_config(); // default config_path == def_logger_cfg_path == "logger.conf"
+  CHECK(cfg.console_level == level::critical);
+}
+
+TEST_CASE("load_logger_config prints a ready-to-paste JSON example when it falls back to the hardcoded default",
+          "[load_logger_config][negative]")
+{
+  const env_guard guard("LOG_CONFIG");
+  ::unsetenv("LOG_CONFIG"); // NOLINT(concurrency-mt-unsafe)
+  const temp_dir_guard tmp;
+
+  const cerr_capture cap;
+  const auto         cfg = logger::load_logger_config("does/not/exist.json");
+  const std::string  out = cap.str();
+  CHECK(cfg.console_level == level::warn);
+  // Explains where it looked and that it fell back to the console...
+  CHECK(out.find("LOG_CONFIG") != std::string::npos);
+  CHECK(out.find("does/not/exist.json") != std::string::npos);
+  CHECK(out.find("console") != std::string::npos);
+  // ...and prints the fallback logger_config's own field values back out, cut&paste-ready.
+  CHECK(out.find(R"("console_level": "warn")") != std::string::npos);
+  CHECK(out.find(R"("file_level": "warn")") != std::string::npos);
+}
+
 TEST_CASE("load_logger_config falls back when a value has the wrong JSON type", "[load_logger_config][negative]")
 {
   // console_level is read as a string (level_from_string(j.value<std::string>(...))) --
@@ -526,6 +600,62 @@ TEST_CASE("load_logger_config falls back when a value has the wrong JSON type", 
   const auto cfg = logger::load_logger_config("does/not/exist.json");
   CHECK(cfg.console_level == level::warn);
   CHECK(cfg.file_level == level::warn);
+}
+
+TEST_CASE("load_logger_config prints a plain 'could not be read' message when LOG_CONFIG points at a missing file",
+          "[load_logger_config][negative]")
+{
+  // Distinct from the "malformed JSON"/"wrong type" cases above: here the
+  // file at LOG_CONFIG does not exist at all, so parse_config_file() never
+  // gets as far as nlohmann::json - no parse_error to report, just "could
+  // not be read".
+  const env_guard      guard("LOG_CONFIG");
+  const temp_dir_guard tmp;
+  ::setenv("LOG_CONFIG", (tmp.dir() / "does_not_exist.json").string().c_str(), 1); // NOLINT(concurrency-mt-unsafe)
+
+  const cerr_capture cap;
+  const auto         cfg = logger::load_logger_config("also/does/not/exist.json");
+  const std::string  out = cap.str();
+  CHECK(cfg.console_level == level::warn);
+  CHECK(out.find("could not be read") != std::string::npos);
+  CHECK(out.find("does_not_exist.json") != std::string::npos);
+}
+
+// ============================================================================
+// parse_logger_config - already-in-hand JSON text, e.g. a section pulled out
+// of a larger config file
+// ============================================================================
+
+TEST_CASE("parse_logger_config reads settings from valid JSON text", "[parse_logger_config][positive]")
+{
+  const auto cfg = logger::parse_logger_config(R"({"app_name":"custom","mode":"async","console_level":"error"})");
+  CHECK(cfg.app_name == "custom");
+  CHECK(cfg.run_mode == logger::mode::async);
+  CHECK(cfg.console_level == level::error);
+}
+
+TEST_CASE("parse_logger_config falls back to defaults for malformed JSON text", "[parse_logger_config][negative]")
+{
+  const logger_config defaults{.app_name = "fallback_app"};
+  const auto          cfg = logger::parse_logger_config("{ not valid json", defaults);
+  CHECK(cfg.app_name == "fallback_app");
+}
+
+TEST_CASE("parse_logger_config falls back to defaults for JSON that isn't an object", "[parse_logger_config][negative]")
+{
+  const logger_config defaults{.app_name = "fallback_app"};
+  const auto          cfg = logger::parse_logger_config("[1, 2, 3]", defaults);
+  CHECK(cfg.app_name == "fallback_app");
+}
+
+TEST_CASE("parse_logger_config only overrides fields present in the JSON text, keeping the rest of defaults",
+          "[parse_logger_config][positive]")
+{
+  const logger_config defaults{.app_name = "base_app", .console_level = level::error, .keep_days = 30};
+  const auto          cfg = logger::parse_logger_config(R"({"console_level":"trace"})", defaults);
+  CHECK(cfg.app_name == "base_app");        // untouched by json_text, kept from defaults
+  CHECK(cfg.console_level == level::trace); // overridden by json_text
+  CHECK(cfg.keep_days == 30);               // untouched by json_text, kept from defaults
 }
 
 // ============================================================================

@@ -5,7 +5,7 @@
  * Run it from the build directory - it looks for its config files relative
  * to the current working directory (see README.md "running the demo").
  *
- *   ./logger_demo                    # loads config/log.debug.json (or LOG_CONFIG)
+ *   ./logger_demo                    # loads ./logger.conf (or LOG_CONFIG)
  *   LOG_CONFIG=/path/to/other.json ./logger_demo
  */
 #include "error_info.hpp"
@@ -31,13 +31,16 @@ namespace
   /// @brief property 1: logging is configured from a file, not hardcoded
   ///
   /// load_logger_config() tries the LOG_CONFIG environment variable first,
-  /// then the path given here, then falls back to a hardcoded default if
-  /// neither can be read - see README.md "configuration file" for the full
-  /// list of settings and what each one means.
+  /// then "logger.conf" in the current working directory, then falls back
+  /// to a hardcoded default if neither can be read - see README.md
+  /// "configuration file" for the full list of settings and what each one
+  /// means. CMake copies the config matching CMAKE_BUILD_TYPE into this
+  /// build directory as "logger.conf" (see CMakeLists.txt), so no explicit
+  /// path is needed here.
   void show_configurable_logging()
   {
     fmt::print("\n--- 1. configuring logging from a file ---\n");
-    const auto cfg = logger::load_logger_config("config/log.debug.json");
+    const auto cfg = logger::load_logger_config();
     fmt::print("loaded config: app_name={}, console_level={}, file_level={}\n",
                cfg.app_name,
                static_cast<int>(cfg.console_level),

@@ -5,6 +5,7 @@
     {
       "name": "ninja-debug",
       "displayName": "Debug",
+      "description": "Ninja + Debug (-O0) + sanitizers - see ENABLE_SANITIZERS in CMakeLists.txt.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/debug",
       "cacheVariables": {
@@ -14,6 +15,7 @@
     {
       "name": "ninja-release",
       "displayName": "Release",
+      "description": "Ninja + Release (-O3, NDEBUG) - debug()/trace() compile out entirely.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/release",
       "cacheVariables": {
@@ -23,6 +25,7 @@
     {
       "name": "ninja-profile",
       "displayName": "Profile",
+      "description": "Same as Release (-O3), plus DWARF debug info and -fno-optimize-sibling-calls for readable stack traces under Linux perf. Sanitizers stay off - their overhead would distort the profile.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/profile",
       "cacheVariables": {
@@ -32,6 +35,7 @@
     {
       "name": "ninja-coverage",
       "displayName": "Coverage (gcov/gcovr, GCC only)",
+      "description": "Debug (-O0) + --coverage instrumentation on logger/logger_test only; see the 'coverage' target in CMakeLists.txt. Mutually exclusive with ENABLE_SANITIZERS.",
       "generator": "Ninja",
       "binaryDir": "${sourceDir}/build/coverage",
       "cacheVariables": {
@@ -42,9 +46,29 @@
     }
   ],
   "buildPresets": [
-    { "name": "debug", "configurePreset": "ninja-debug" },
-    { "name": "release", "configurePreset": "ninja-release" },
-    { "name": "profile", "configurePreset": "ninja-profile" },
-    { "name": "coverage", "configurePreset": "ninja-coverage" }
+    { "name": "debug", "configurePreset": "ninja-debug", "displayName": "Build (Debug)" },
+    { "name": "release", "configurePreset": "ninja-release", "displayName": "Build (Release)" },
+    { "name": "profile", "configurePreset": "ninja-profile", "displayName": "Build (Profile)" },
+    { "name": "coverage", "configurePreset": "ninja-coverage", "displayName": "Build (Coverage)", "targets": ["coverage"] }
+  ],
+  "testPresets": [
+    {
+      "name": "debug",
+      "configurePreset": "ninja-debug",
+      "displayName": "Test (Debug)",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "release",
+      "configurePreset": "ninja-release",
+      "displayName": "Test (Release)",
+      "output": { "outputOnFailure": true }
+    },
+    {
+      "name": "profile",
+      "configurePreset": "ninja-profile",
+      "displayName": "Test (Profile)",
+      "output": { "outputOnFailure": true }
+    }
   ]
 }
