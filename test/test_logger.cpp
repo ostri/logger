@@ -305,6 +305,23 @@ TEST_CASE("a message at or above file_level ends up in the log file", "[Logger][
   CHECK(content.contains("hello file sink"));
 }
 
+TEST_CASE("log_filename returns the file sink's own actual (rotated) path", "[Logger][positive]")
+{
+  const temp_dir_guard tmp;
+  const logger_config  cfg{.app_name = "filename_app", .console_level = level::off, .file_level = level::info, .log_folder = "."};
+  const auto           lg = make_logger(cfg);
+  // Same path daily_log_path() predicts by reconstructing spdlog's own
+  // "_YYYY-MM-DD" rule by hand (see its own comment) - log_filename() is
+  // the one place a caller gets that path without doing that
+  // reconstruction itself. weakly_canonical() on both sides: log_folder =
+  // "." makes build()'s own fs::absolute() keep the "./" segment
+  // (".../filename_app_....log" is never written), which a plain path
+  // comparison would otherwise treat as different from daily_log_path()'s
+  // own already-clean tmp.dir()-based path.
+  const auto expected = daily_log_path(tmp.dir(), "filename_app");
+  CHECK(fs::weakly_canonical(lg->log_filename()) == fs::weakly_canonical(expected));
+}
+
 // ============================================================================
 // thread name (%* / make_log_name)
 // ============================================================================

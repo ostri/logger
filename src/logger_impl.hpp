@@ -79,11 +79,13 @@ namespace logger
     [[nodiscard]] enum level console_level() const noexcept;
     [[nodiscard]] enum level file_level() const noexcept;
     [[nodiscard]] enum level level() const noexcept;
-    void                     set_console_level(enum level l);
-    void                     set_file_level(enum level l);
-    void                     set_level(enum level l);
-    void                     flush() const;
-    void                     flush_on(enum level l);
+    /// @brief the file sink's own current filename - see Logger::log_filename()'s own doc comment
+    [[nodiscard]] std::string log_filename() const;
+    void                      set_console_level(enum level l);
+    void                      set_file_level(enum level l);
+    void                      set_level(enum level l);
+    void                      flush() const;
+    void                      flush_on(enum level l);
 
     void _log(enum level l, std::string_view s) const;
 

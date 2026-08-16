@@ -137,6 +137,19 @@ log.set_file_level(logger::level::debug);
 log.flush_on(logger::level::error);          // flush immediately from error upward
 ```
 
+### finding the file sink's actual path
+
+`logger_config::log_folder` + `app_name` name a base path (e.g. `"logs/ach"`), not the file
+actually being written to - spdlog's own daily rotation appends a `_YYYY-MM-DD` suffix that
+changes at `rotation_hour:rotation_minute` every day the process stays up. `log_filename()`
+returns that real, current path, without a caller having to duplicate spdlog's own date-naming
+rule to predict it (e.g. to truncate/delete "this Logger's own log file" from a maintenance
+command).
+
+```cpp
+const std::string path = log.log_filename(); // e.g. "logs/ach_2026-08-16.log"
+```
+
 ### sync vs async logging
 
 `logger_config::run_mode` picks the mode. `sync` (the default): the calling thread writes to the

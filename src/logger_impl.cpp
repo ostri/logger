@@ -100,6 +100,13 @@ namespace logger
   enum level Logger::impl::level() const noexcept         { return logger_      ? static_cast<enum level>(logger_->level())       : level::off; } // GCOVR_EXCL_BR_LINE
   // clang-format on
 
+  // Delegates to daily_file_sink_mt::filename(), which already tracks the current
+  // rotated name itself (base_filename_YYYY-MM-DD.ext, recomputed on every
+  // rotation - see spdlog/sinks/daily_file_sink.h's own daily_filename_calculator)
+  // - no need to duplicate that date/rotation logic here, spdlog already
+  // maintains the one true answer.
+  std::string Logger::impl::log_filename() const { return file_sink_ ? file_sink_->filename() : std::string{}; } // GCOVR_EXCL_BR_LINE
+
   void Logger::impl::set_console_level(enum level l)
   {
     if (console_sink_) console_sink_->set_level(static_cast<spdlog::level::level_enum>(l)); // GCOVR_EXCL_BR_LINE

@@ -51,6 +51,8 @@ namespace logger
   void Logger::flush() const { pimpl_->flush(); }
   void Logger::flush_on(enum level l) { pimpl_->flush_on(l); }
 
+  std::string Logger::log_filename() const { return pimpl_->log_filename(); }
+
   void Logger::_log(enum level l, std::string_view s) const { pimpl_->_log(l, s); }
 
   void Logger::log_exception_with_chain(const std::exception& e, enum level l) const { pimpl_->log_exception_with_chain(e, l); }

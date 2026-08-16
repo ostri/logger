@@ -164,6 +164,24 @@ namespace logger
     void flush() const;
     void flush_on(enum level l);
 
+    /**
+     * @brief the file sink's own current, actual filename on disk
+     *
+     * cfg.log_folder + cfg.app_name (the two create()/logger_config.hpp
+     * takes) name a base path, e.g. "logs/ach" - the file actually being
+     * written to right now is that base path with spdlog's own daily
+     * rotation suffix appended ("logs/ach_2026-08-16.log"), which changes at
+     * cfg.rotation_hour:cfg.rotation_minute every day the process stays up.
+     * A caller that needs the real path (e.g. to truncate/delete "this
+     * Logger's own log file" - see ach's "tool bootstrap log" for a worked
+     * example) cannot reconstruct it from cfg alone without duplicating
+     * spdlog's own date-formatting rule; this asks the sink for the name it
+     * is already tracking instead. Empty only if called before create()
+     * ever finished building this Logger's sinks, which is not reachable
+     * from outside this library.
+     */
+    [[nodiscard]] std::string log_filename() const;
+
     /// @brief sets the logical thread name %* reads - see log_thread_name above
     static void                      make_log_name(std::string_view parent, std::string_view child = "");
     [[nodiscard]] static std::string log_name();
