@@ -273,7 +273,19 @@ namespace logger
 
     if (cfg.run_mode == mode::async)
     {
-      spdlog::init_thread_pool(8192, 1); // NOLINT(readability-magic-numbers)
+      // spdlog::init_thread_pool() unconditionally replaces spdlog's own process-wide thread
+      // pool (details::registry::set_tp() below), regardless of whether one already exists - a
+      // second Logger built with run_mode::async in the SAME process (e.g. one caller's own
+      // Logger plus a library it links against building its own, like fsp::importer's internal
+      // logger - see ach's tool/src/custom/importer/importer_ct_in.cpp) would otherwise drop the
+      // FIRST Logger's async_logger down to a dangling weak_ptr the moment the second Logger is
+      // built, later surfacing as spdlog's own "async log: thread pool doesn't exist anymore"
+      // error the next time the first Logger logs anything. Only calling init_thread_pool() when
+      // no pool exists yet means every async-mode Logger in one process shares the SAME pool
+      // instead of fighting over it - safe since spdlog::details::thread_pool is itself
+      // thread-safe and multiple async_logger instances routinely share one pool by design (see
+      // spdlog::thread_pool()'s own doc comment).
+      if (! spdlog::thread_pool()) spdlog::init_thread_pool(8192, 1); // NOLINT(readability-magic-numbers)
       logger_ = std::make_shared<spdlog::async_logger>(
         cfg.app_name, sinks.begin(), sinks.end(), spdlog::thread_pool(), spdlog::async_overflow_policy::overrun_oldest);
     }
