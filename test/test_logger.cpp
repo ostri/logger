@@ -10,6 +10,9 @@
 #include <expected>
 #include <filesystem>
 #include <fstream>
+#include <thread>
+#include <chrono>
+#include <fcntl.h>
 #include <ios>
 #include <iostream>
 #include <iterator>
@@ -111,6 +114,77 @@ namespace
     std::ofstream out(p, std::ios::binary);
     out << content;
   }
+
+  /// @brief the file's contents once they contain @p marker, or whatever it
+  /// holds after @p timeout
+  ///
+  /// An async Logger's flush() only queues a flush for spdlog's own backing
+  /// thread and returns without waiting for it, and destroying one Logger
+  /// does not drain the process-wide thread pool it shares with every other
+  /// async Logger (see logger_impl.cpp's own comment on init_thread_pool()).
+  /// Reading the file straight after flush() therefore races the backing
+  /// thread and finds it empty often enough to matter - polling for what the
+  /// test is actually waiting for is what makes such a case deterministic.
+  /// how long to wait between two looks at the file read_when_contains() polls
+  constexpr auto kPollInterval = std::chrono::milliseconds(10);
+
+  std::string read_when_contains(const fs::path& path, std::string_view marker, std::chrono::milliseconds timeout = std::chrono::seconds(5))
+  {
+    const auto  deadline = std::chrono::steady_clock::now() + timeout;
+    std::string content;
+    do
+    {
+      std::ifstream in(path);
+      content.assign((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+      if (content.contains(marker)) break;
+      std::this_thread::sleep_for(kPollInterval);
+    } while (std::chrono::steady_clock::now() < deadline);
+    return content;
+  }
+
+  /// RAII helper that redirects the stdout FILE DESCRIPTOR to a temporary
+  /// file for the duration of the test. spdlog's own console sink writes
+  /// through stdout directly rather than through std::cout, so swapping a
+  /// streambuf the way cerr_capture below does would not see any of it.
+  class stdout_fd_capture
+  {
+  public:
+    stdout_fd_capture()
+    : path_(fs::temp_directory_path() / fmt::format("logger_stdout_{}.txt", ::getpid()))
+    , saved_fd_(::dup(STDOUT_FILENO))
+    {
+      // NOLINTNEXTLINE(cppcoreguidelines-pro-type-vararg, hicpp-vararg) - open()'s mode argument is variadic by design
+      const int tmp_fd = ::open(path_.c_str(), O_WRONLY | O_CREAT | O_TRUNC, 0600);
+      if (tmp_fd >= 0)
+      {
+        (void)::dup2(tmp_fd, STDOUT_FILENO);
+        (void)::close(tmp_fd);
+      }
+    }
+    ~stdout_fd_capture()
+    {
+      (void)::fflush(stdout);
+      (void)::dup2(saved_fd_, STDOUT_FILENO);
+      (void)::close(saved_fd_);
+      std::error_code ec;
+      fs::remove(path_, ec);
+    }
+    stdout_fd_capture(const stdout_fd_capture&)            = delete;
+    stdout_fd_capture& operator=(const stdout_fd_capture&) = delete;
+    stdout_fd_capture(stdout_fd_capture&&)                 = delete;
+    stdout_fd_capture& operator=(stdout_fd_capture&&)      = delete;
+
+    /// @brief everything written to stdout so far
+    [[nodiscard]] std::string str() const
+    {
+      (void)::fflush(stdout);
+      std::ifstream in(path_);
+      return {(std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>()};
+    }
+  private:
+    fs::path path_;
+    int      saved_fd_;
+  };
 
   /// RAII helper that redirects std::cerr into an in-memory buffer for the
   /// duration of the test - load_logger_config()'s fallback/parse-error
@@ -458,13 +532,11 @@ TEST_CASE("the thread name reaches the file sink through %* on an async Logger t
                     .file_level    = level::info,
                     .pattern       = "[%*] %v",
                     .log_folder    = "."};
-  {
-    const auto lg = make_logger(cfg);
-    lg->info("async marker");
-    lg->flush();
-  }
-  std::ifstream     in(daily_log_path(tmp.dir(), "async_thread_name_app"));
-  const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  const auto    lg = make_logger(cfg);
+  lg->info("async marker");
+  lg->flush();
+
+  const auto content = read_when_contains(daily_log_path(tmp.dir(), "async_thread_name_app"), "async marker");
   CHECK(content.contains("[async-worker-3]"));
   CHECK(content.contains("async marker"));
 }
@@ -1025,4 +1097,121 @@ TEST_CASE("Logger::create_or_exit exits with 1 when the logger cannot be built",
   const int            status = run_helper("create_or_exit_fail", "no/such/parent/logs", "create_or_exit_fail_app");
   REQUIRE(WIFEXITED(status));
   CHECK(WEXITSTATUS(status) == 1);
+}
+
+// ============================================================================
+// console thread-name filter (set_console_thread_filter)
+// ============================================================================
+
+TEST_CASE("no console thread filter is set by default", "[Logger][positive]")
+{
+  const temp_dir_guard tmp;
+  const logger_config  cfg{.app_name = "nofilter_app", .console_level = level::info, .file_level = level::off, .log_folder = "."};
+  const auto           lg = make_logger(cfg);
+  CHECK(lg->console_thread_filter().empty());
+}
+
+TEST_CASE("set_console_thread_filter reports back what was set", "[Logger][positive]")
+{
+  const temp_dir_guard tmp;
+  const logger_config  cfg{.app_name = "getset_app", .console_level = level::info, .file_level = level::off, .log_folder = "."};
+  const auto           lg = make_logger(cfg);
+
+  lg->set_console_thread_filter({"wd-doc", "wd-importer"});
+  CHECK(lg->console_thread_filter() == std::vector<std::string>{"wd-doc", "wd-importer"});
+
+  lg->set_console_thread_filter({}); // empty turns the filter back off
+  CHECK(lg->console_thread_filter().empty());
+}
+
+TEST_CASE("a console thread filter passes a matching thread and drops the rest", "[Logger][positive]")
+{
+  const temp_dir_guard    tmp;
+  const stdout_fd_capture out;
+  const logger_config     cfg{.app_name = "filter_app", .console_level = level::info, .file_level = level::off, .log_folder = "."};
+  const auto              lg = make_logger(cfg);
+
+  lg->set_console_thread_filter({"wd-doc"});
+
+  Logger::make_log_name("wd-doc");
+  lg->info("from the watched component");
+  Logger::make_log_name("other");
+  lg->info("from an unrelated component");
+  lg->flush();
+
+  const auto console = out.str();
+  CHECK(console.contains("from the watched component"));
+  CHECK_FALSE(console.contains("from an unrelated component"));
+}
+
+TEST_CASE("a console thread filter matches on a prefix, so it covers child thread names", "[Logger][positive]")
+{
+  const temp_dir_guard    tmp;
+  const stdout_fd_capture out;
+  const logger_config     cfg{.app_name = "prefix_app", .console_level = level::info, .file_level = level::off, .log_folder = "."};
+  const auto              lg = make_logger(cfg);
+
+  lg->set_console_thread_filter({"wd-doc"});
+
+  // make_log_name(parent, child) joins with '/', so a parent prefix must cover its children
+  Logger::make_log_name("wd-doc", "worker-3");
+  lg->info("from a worker thread");
+  lg->flush();
+
+  CHECK(out.str().contains("from a worker thread"));
+}
+
+TEST_CASE("a console thread filter leaves the file sink alone", "[Logger][negative]")
+{
+  const temp_dir_guard    tmp;
+  const stdout_fd_capture out;
+  const logger_config     cfg{.app_name = "filefull_app", .console_level = level::info, .file_level = level::info, .log_folder = "."};
+  {
+    const auto lg = make_logger(cfg);
+    lg->set_console_thread_filter({"wd-doc"});
+
+    Logger::make_log_name("other");
+    lg->info("filtered off the console only");
+    lg->flush();
+
+    CHECK_FALSE(out.str().contains("filtered off the console only"));
+  }
+
+  // the whole point of filtering only the console: the file still has everything
+  std::ifstream     in(daily_log_path(tmp.dir(), "filefull_app"));
+  const std::string content((std::istreambuf_iterator<char>(in)), std::istreambuf_iterator<char>());
+  CHECK(content.contains("filtered off the console only"));
+}
+
+TEST_CASE("an empty console thread filter lets every thread through again", "[Logger][negative]")
+{
+  const temp_dir_guard    tmp;
+  const stdout_fd_capture out;
+  const logger_config     cfg{.app_name = "cleared_app", .console_level = level::info, .file_level = level::off, .log_folder = "."};
+  const auto              lg = make_logger(cfg);
+
+  lg->set_console_thread_filter({"wd-doc"});
+  lg->set_console_thread_filter({}); // cleared again
+
+  Logger::make_log_name("anything-at-all");
+  lg->info("no filter is in effect");
+  lg->flush();
+
+  CHECK(out.str().contains("no filter is in effect"));
+}
+
+TEST_CASE("a console thread filter that matches nothing drops every record", "[Logger][negative]")
+{
+  const temp_dir_guard    tmp;
+  const stdout_fd_capture out;
+  const logger_config     cfg{.app_name = "nomatch_app", .console_level = level::info, .file_level = level::off, .log_folder = "."};
+  const auto              lg = make_logger(cfg);
+
+  lg->set_console_thread_filter({"a-name-nothing-uses"});
+
+  Logger::make_log_name("wd-doc");
+  lg->info("this must not appear");
+  lg->flush();
+
+  CHECK_FALSE(out.str().contains("this must not appear"));
 }

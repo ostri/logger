@@ -112,6 +112,16 @@ namespace logger
     if (console_sink_) console_sink_->set_level(static_cast<spdlog::level::level_enum>(l)); // GCOVR_EXCL_BR_LINE
   }
 
+  void Logger::impl::set_console_thread_filter(std::vector<std::string> prefixes)
+  {
+    if (console_filter_) console_filter_->set_prefixes(std::move(prefixes)); // GCOVR_EXCL_BR_LINE
+  }
+
+  std::vector<std::string> Logger::impl::console_thread_filter() const
+  {
+    return console_filter_ ? console_filter_->prefixes() : std::vector<std::string>{}; // GCOVR_EXCL_BR_LINE
+  }
+
   void Logger::impl::set_file_level(enum level l)
   {
     if (file_sink_) file_sink_->set_level(static_cast<spdlog::level::level_enum>(l)); // GCOVR_EXCL_BR_LINE
@@ -268,7 +278,13 @@ namespace logger
     file_sink_->set_formatter(make_formatter(cfg.pattern));
     set_file_level(cfg.file_level);
 
-    std::vector<spdlog::sink_ptr> sinks{console_sink_,
+    // The logger holds the wrapper, not console_sink_ itself, so a filter can
+    // drop a record before it is written; console_sink_ stays the thing levels
+    // and formatting are set on, and the file sink is deliberately left
+    // unwrapped - see thread_name_filter_sink's own comment.
+    console_filter_ = std::make_shared<thread_name_filter_sink>(console_sink_, kThreadNamePayloadSep);
+
+    std::vector<spdlog::sink_ptr> sinks{console_filter_,
                                         file_sink_}; // GCOVR_EXCL_BR_LINE -- std::vector's own bad_alloc branch, not exercised on purpose
 
     if (cfg.run_mode == mode::async)

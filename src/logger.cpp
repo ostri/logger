@@ -44,9 +44,13 @@ namespace logger
   enum level Logger::console_level() const noexcept { return pimpl_->console_level(); }
   enum level Logger::file_level() const noexcept { return pimpl_->file_level(); }
   void       Logger::set_console_level(enum level l) { pimpl_->set_console_level(l); }
-  void       Logger::set_file_level(enum level l) { pimpl_->set_file_level(l); }
-  void       Logger::set_level(enum level l) { pimpl_->set_level(l); }
-  bool       Logger::active(enum level l) const noexcept { return l >= pimpl_->level(); }
+
+  void Logger::set_console_thread_filter(std::vector<std::string> prefixes) { pimpl_->set_console_thread_filter(std::move(prefixes)); }
+
+  std::vector<std::string> Logger::console_thread_filter() const { return pimpl_->console_thread_filter(); }
+  void                     Logger::set_file_level(enum level l) { pimpl_->set_file_level(l); }
+  void                     Logger::set_level(enum level l) { pimpl_->set_level(l); }
+  bool                     Logger::active(enum level l) const noexcept { return l >= pimpl_->level(); }
 
   void Logger::flush() const { pimpl_->flush(); }
   void Logger::flush_on(enum level l) { pimpl_->flush_on(l); }
