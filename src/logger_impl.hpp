@@ -5,9 +5,11 @@
 #include <spdlog/pattern_formatter.h>
 #include <spdlog/sinks/daily_file_sink.h>
 #include <spdlog/sinks/stdout_color_sinks.h>
+#include "thread_name_filter_sink.hpp"
 #include <expected>
 #include <memory>
 #include <string>
+#include <vector>
 
 namespace logger
 {
@@ -80,12 +82,14 @@ namespace logger
     [[nodiscard]] enum level file_level() const noexcept;
     [[nodiscard]] enum level level() const noexcept;
     /// @brief the file sink's own current filename - see Logger::log_filename()'s own doc comment
-    [[nodiscard]] std::string log_filename() const;
-    void                      set_console_level(enum level l);
-    void                      set_file_level(enum level l);
-    void                      set_level(enum level l);
-    void                      flush() const;
-    void                      flush_on(enum level l);
+    [[nodiscard]] std::string              log_filename() const;
+    void                                   set_console_level(enum level l);
+    void                                   set_console_thread_filter(std::vector<std::string> prefixes);
+    [[nodiscard]] std::vector<std::string> console_thread_filter() const;
+    void                                   set_file_level(enum level l);
+    void                                   set_level(enum level l);
+    void                                   flush() const;
+    void                                   flush_on(enum level l);
 
     void _log(enum level l, std::string_view s) const;
 
@@ -104,7 +108,10 @@ namespace logger
     void build(const logger_config& cfg);
 
     std::shared_ptr<spdlog::sinks::stdout_color_sink_mt> console_sink_;
-    std::shared_ptr<spdlog::sinks::daily_file_sink_mt>   file_sink_;
-    std::shared_ptr<spdlog::logger>                      logger_;
+    // console_sink_ is what levels and formatting are set on; this is what the
+    // logger actually holds, so a filter can drop a record before it reaches it
+    std::shared_ptr<thread_name_filter_sink>           console_filter_;
+    std::shared_ptr<spdlog::sinks::daily_file_sink_mt> file_sink_;
+    std::shared_ptr<spdlog::logger>                    logger_;
   };
 } // namespace logger

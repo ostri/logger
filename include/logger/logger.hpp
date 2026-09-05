@@ -37,6 +37,7 @@
 #include <memory>
 #include <string>
 #include <string_view>
+#include <vector>
 
 namespace logger
 {
@@ -103,6 +104,32 @@ namespace logger
     void                     set_console_level(enum level l);
     void                     set_file_level(enum level l);
     void                     set_level(enum level l);
+
+    /**
+     * @brief narrows the console sink to the threads whose log name starts
+     * with one of @p prefixes, leaving the file sink untouched
+     *
+     * Matching is on a prefix of the name make_log_name() set on the logging
+     * thread, so a parent name also covers every child built from it:
+     * "wd-doc" lets "wd-doc/worker-3" through as well. A record logged from a
+     * thread that never called make_log_name() carries no name to match and
+     * is let through rather than dropped.
+     *
+     * Only the console is affected, on purpose - a filter is a way to read
+     * along during development, and must not cost the log file the records
+     * an incident is later reconstructed from.
+     *
+     * @param prefixes thread-name prefixes to let through; an empty list (the
+     *        state every Logger starts in) turns the filter off, so every
+     *        record reaches the console again
+     */
+    void set_console_thread_filter(std::vector<std::string> prefixes);
+
+    /**
+     * @brief the prefixes set_console_thread_filter() last installed
+     * @return the prefix list, empty when no filter is in effect
+     */
+    [[nodiscard]] std::vector<std::string> console_thread_filter() const;
 
     /// true if a message at this level would actually reach a sink - check
     /// this before doing expensive work to build a message by hand
