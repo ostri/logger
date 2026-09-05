@@ -34,7 +34,7 @@ include(cmake/CPM.cmake)   # or your own copy of it
 CPMAddPackage(
     NAME logger
     GITHUB_REPOSITORY ostri/logger
-    GIT_TAG v0.1.12
+    GIT_TAG v0.1.13
 )
 
 add_executable(myapp main.cpp)
