@@ -70,6 +70,11 @@ namespace logger
 
     void log(const spdlog::details::log_msg& msg) override
     {
+      // spdlog::sinks::sink::set_level()/should_log() are non-virtual members holding a level per
+      // sink, and a logger only ever consults the sink it actually holds - which is this wrapper.
+      // Asking the inner sink itself is what keeps set_console_level() meaning what it always did:
+      // without this, wrapping the console sink would silently defeat its own level.
+      if (! inner_->should_log(msg.level)) return;
       if (! passes(msg)) return;
       inner_->log(msg);
     }

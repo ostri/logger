@@ -1215,3 +1215,25 @@ TEST_CASE("a console thread filter that matches nothing drops every record", "[L
 
   CHECK_FALSE(out.str().contains("this must not appear"));
 }
+
+TEST_CASE("the console level still applies once a thread filter is in play", "[Logger][negative]")
+{
+  const temp_dir_guard    tmp;
+  const stdout_fd_capture out;
+  // file_level below console_level on purpose: the logger itself sits at min(console, file), so a
+  // record at "info" reaches the sinks and it is the CONSOLE sink's own level that has to stop it
+  const logger_config cfg{.app_name = "levelkept_app", .console_level = level::warn, .file_level = level::info, .log_folder = "."};
+  const auto          lg = make_logger(cfg);
+
+  // Wrapping the console sink must not cost it its own level: a logger consults the sink it holds
+  // (the wrapper), so the wrapper has to ask the sink it wraps rather than pass everything on.
+  lg->set_console_thread_filter({"kept"});
+  Logger::make_log_name("kept");
+  lg->info("below the console level, must not appear");
+  lg->warn("at the console level, must appear");
+  lg->flush();
+
+  const auto console = out.str();
+  CHECK(console.contains("at the console level, must appear"));
+  CHECK_FALSE(console.contains("below the console level, must not appear"));
+}
